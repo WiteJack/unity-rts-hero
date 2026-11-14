@@ -91,7 +91,7 @@ public class HeroStats : MonoBehaviour
 
     public float GetCurrentAttackSpeed()
     {
-        return 1.0f + (agility * 0.05f) + (willpower * 0.05f);
+        return (agility * 0.05f) + (willpower * 0.05f);
     }
 
     public float GetDefense()
