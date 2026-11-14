@@ -28,9 +28,9 @@ public class UnitStats : MonoBehaviour
         currentHP = Mathf.Min(currentHP + hpRegenPerSecond * Time.deltaTime, maxHP);
     }
 
-    public void TakeDamage(float incomingDamage)
+    public float TakeDamage(float incomingDamage)
     {
-        if (isDead) return;
+        if (isDead) return 0f;
 
         float finalDamage = incomingDamage - defense;
         if (finalDamage < 10f) finalDamage = 10f; 
@@ -39,6 +39,7 @@ public class UnitStats : MonoBehaviour
         Debug.Log($"<color=red>[МОБ]</color> {gameObject.name} получил урон: {finalDamage}. Осталось HP: {currentHP}");
 
         if (currentHP <= 0) Die();
+        return finalDamage;
     }
 
     void Die()

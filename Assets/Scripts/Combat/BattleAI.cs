@@ -8,6 +8,10 @@ public class BattleAI : MonoBehaviour
     public float scanRadius = 15f;         
     [HideInInspector] public float attackCooldown = 1.5f;    
 
+    [Header("Эффекты удара")]
+    [Tooltip("Показывать всплывающие цифры урона над целью")]
+    public bool showDamagePopups = true;
+
     [Header("Настройки Анимации")]
     [Tooltip("Длина клипа атаки в секундах при множителе 1.0 (подстрой под длину клипа в окне Animation)")]
     public float baseAttackClipLength = 1.5f;
@@ -158,8 +162,15 @@ public class BattleAI : MonoBehaviour
             generatedDamage = myUnitStats.baseDamage;
         }
 
-        if (targetHeroStats != null) targetHeroStats.TakeDamage(generatedDamage);
-        if (targetUnitStats != null) targetUnitStats.TakeDamage(generatedDamage);
+        float dealtDamage = 0f;
+        if (targetHeroStats != null) dealtDamage = targetHeroStats.TakeDamage(generatedDamage);
+        if (targetUnitStats != null) dealtDamage = targetUnitStats.TakeDamage(generatedDamage);
+
+        if (showDamagePopups && dealtDamage > 0f)
+        {
+            Vector3 popupPosition = currentTarget.position + Vector3.up * 1.5f;
+            DamagePopup.Spawn(popupPosition, dealtDamage, isCrit);
+        }
     }
 
     private bool IsTargetDead(Transform target)

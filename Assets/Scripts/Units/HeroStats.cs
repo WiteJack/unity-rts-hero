@@ -99,9 +99,9 @@ public class HeroStats : MonoBehaviour
         return (endurance * 0.1f) + (vitality * 0.1f);
     }
 
-    public void TakeDamage(float incomingDamage)
+    public float TakeDamage(float incomingDamage)
     {
-        if (isDead) return;
+        if (isDead) return 0f;
 
         float finalDamage = incomingDamage - GetDefense();
         if (finalDamage < 10f) finalDamage = 10f; 
@@ -110,6 +110,7 @@ public class HeroStats : MonoBehaviour
         Debug.Log($"<color=cyan>[ГЕРОЙ]</color> {gameObject.name} получил урон: {finalDamage}. Осталось HP: {currentHP}");
 
         if (currentHP <= 0) Die();
+        return finalDamage;
     }
 
     void Die()
