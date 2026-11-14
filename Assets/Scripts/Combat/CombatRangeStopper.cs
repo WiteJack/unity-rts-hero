@@ -56,17 +56,15 @@ public class CombatRangeStopper : MonoBehaviour
 
             var hero = col.GetComponentInParent<HeroStats>();
             var unit = col.GetComponentInParent<UnitStats>();
-            var building = col.GetComponentInParent<BuildingStats>();
-
-            if (hero == null && unit == null && building == null) continue;
+            
+            if (hero == null && unit == null) continue;
             if (hero != null && hero.isDead) continue;
             if (unit != null && unit.isDead) continue;
 
             Transform enemyRoot = col.transform.root;
             if (hero != null) enemyRoot = hero.transform;
             else if (unit != null) enemyRoot = unit.transform;
-            else if (building != null) enemyRoot = building.transform;
-
+            
             float centerDistance = Vector3.Distance(transform.position, enemyRoot.position);
 
             if (centerDistance <= stopDistance)

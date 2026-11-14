@@ -36,8 +36,8 @@ Unity 3D-игра в жанре RTS / tower-defense с героем (рабоч�
 
 ### Buildings
 - `BuildingDestruction.cs` — разрушение зданий.
-- `BuildingMeleeHelper.cs` — зомби бьёт здание, если оно прямо перед ним (Allies с BaseDamage == 0).
-- ВАЖНО: скрипт `BuildingStats` **не загружен** — на него ссылаются CombatRangeStopper и BuildingMeleeHelper. Запросить у владельца.
+- `BuildingMeleeHelper.cs` — зомби бьёт здание, если оно прямо перед ним.
+- **РЕШЕНО:** здания делаются через `UnitStats` (слой Allies + `baseDamage == 0`), как обычный юнит. `BuildingStats.cs` отменён, файл лежит в `Assets/Scripts/Buildings/BuildingStats.cs` только как архив — нигде не используется, кандидат на удаление.
 
 ### UI
 - `WorldHealthBar.cs` / `CameraHealthBars.cs` — полоски HP над юнитами, цвета по типу (герой/союзники/нейтралы/враги).
@@ -64,18 +64,19 @@ Unity 3D-игра в жанре RTS / tower-defense с героем (рабоч�
 2. Доступ к `BattleAI.currentTarget` через Reflection из 3 скриптов — работает, но хрупко; кандидат на рефакторинг (сделать публичное свойство).
 3. Много `Debug.Log` в горячих путях (урон при 500 юнитах) — собирать в условную компиляцию или выключатель.
 4. Номера слоёв зашиты магическими числами (6/7/8/9) во многих скриптах — кандидат на константы/статический класс.
-5. Отсутствует скрипт `BuildingStats` (см. Buildings).
+5. `BuildingStats.cs` — отменённая система, лежит архивом (см. Buildings).
 
 ## Текущий статус
 
 - Загружена первая часть: 23 скрипта + 8 скриншотов (префабы героя и зомби, инспекторы, Animator-контроллер зомби).
 - Скрипты разложены по папкам `Assets/Scripts/{Combat,Units,Buildings,UI,Economy,Environment,Utility,Camera}`.
 - Диздок (20–30 стр.) ещё НЕ загружен — ожидается.
-- Репозиторий GitHub: создаётся, ссылка будет здесь: _TBD_
+- Мёртвая ссылка на `BuildingStats` в `CombatRangeStopper.cs` удалена (здания обрабатываются через ветку `UnitStats`).
+- Репозиторий GitHub: https://github.com/WiteJack/unity-rts-hero.git
 
 ## Дальше по плану
 
-1. Получить от владельца: оставшиеся разделы диздока (общая часть, здания/башни, волны), скрипт `BuildingStats`, уточнить судьбу `CharacterStats.cs`.
+1. Получить от владельца: оставшиеся разделы диздока (общая часть, здания/башни, волны), уточнить судьбу `CharacterStats.cs` (дубликат HeroStats).
 2. Далее — по диздоку.
 
 ## Диздок (docs/design, конвертирован из HTML в UTF-8)
@@ -125,4 +126,5 @@ Unity 3D-игра в жанре RTS / tower-defense с героем (рабоч�
 - Переданы 2 части: 23 скрипта, 13 скриншотов (префабы, инспекторы, Animator, сцена, камера, UI-мокапы ui1–ui3), 6 HTML-разделов диздока (конвертированы в UTF-8 в docs/design/).
 - Скрипты разложены по папкам `Assets/Scripts/{Combat,Units,Buildings,UI,Economy,Environment,Utility,Camera}`.
 - Диздок передан частично: отсутствуют общая часть (описание матча, победа/поражение), раздел про здания/башни, курьер детально.
-- Репозиторий GitHub: создаётся, ссылка будет здесь: _TBD_
+- Мёртвая ссылка на `BuildingStats` в `CombatRangeStopper.cs` удалена (здания обрабатываются через ветку `UnitStats`).
+- Репозиторий GitHub: https://github.com/WiteJack/unity-rts-hero.git
