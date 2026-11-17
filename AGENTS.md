@@ -27,6 +27,7 @@ Unity 3D-игра в жанре RTS / tower-defense с героем (рабоч�
 - `TowerAttack.cs` — башни: одиночная пуля или ядро по области (`isAreaDamage`, `splashRadius`). Снаряд создаётся кодом (сфера + TrailRenderer), урон через `UnitStats`/`HeroStats`.
 - `CombatRangeStopper.cs` — останавливает юнита чуть внутри `attackRange`, чтобы BattleAI гарантированно начинал удар; не мешает приказу игрока (`isMovingByOrder`).
 - `UnitSeparation.cs` — анти-слипание толпы: мягкое расталкивание, `OverlapSphereNonAlloc`, случайный `avoidancePriority`, проверки ~25 раз/сек (оптимизация под 500 юнитов).
+- `ShooterAttackLoop.cs` — непрерывная стрельба стрелка (Allies_Shooter): пока у BattleAI есть живая цель в `attackRange`, держит Animator в зацикленном состоянии атаки (bool `IsAttacking` + Loop Time на клипе), без откатов в Idle между выстрелами. `AttackSpeedMult` ставится в LateUpdate (перекрывает перезапись из `UnitStats.PlayAttackAnimation()`). Работает только при наличии `UnitStats` — героя (HeroStats) не затрагивает. Цель BattleAI читает через Reflection (`currentTarget`). Требует настройки Animator: bool `IsAttacking`, Loop Time на клипе атаки, переход Attack→Idle без Has Exit Time с условием `IsAttacking = false`. Один цикл клипа = один выстрел (урон через событие `OnAttackHitEvent`).
 
 ### Units
 - `HeroStats.cs` — атрибуты героя: сила (1=5 урона), живучесть (1=25 HP), выносливость (реген HP + защита), ловкость и сила воли (+скорость атаки), мудрость (мана). Особая механика: скорость атаки выше капа 4.0 конвертируется в шанс крита (x1.5, дальше растёт урон крита). Минимальный урон после брони = 10.
@@ -79,6 +80,7 @@ Unity 3D-игра в жанре RTS / tower-defense с героем (рабоч�
 - Мёртвая ссылка на `BuildingStats` в `CombatRangeStopper.cs` удалена (здания обрабатываются через ветку `UnitStats`).
 - `CharacterStats.cs` удалён (подтверждено владельцем: нигде не использовался; герой — `HeroStats`, мобы — `UnitStats`).
 - Реализованы всплывающие цифры урона (`DamagePopup.cs` + хук в `BattleAI`), показывают финальный урон после защиты; крит — крупнее и оранжевым.
+- Добавлен `ShooterAttackLoop.cs` (Combat) — непрерывная анимация стрельбы у стрелка: зацикленное состояние атаки через bool `IsAttacking`, пока цель в радиусе атаки. Известная проблема, которую решает: клип атаки короче кулдауна, и переход Attack→Idle с Has Exit Time давал паузу в Idle перед каждым выстрелом.
 - Репозиторий GitHub: https://github.com/WiteJack/unity-rts-hero.git (ветка `main`, запушен)
 
 ## Дальше по плану
