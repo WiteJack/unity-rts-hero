@@ -158,7 +158,8 @@ public class HeroStatsBarsUI : MonoBehaviour
         rootRect.sizeDelta = new Vector2(barWidth * 2f + barGap + labelWidth, barHeight * 2f + barGap);
 
         // Ряд 1 (верхний): HP слева, мана справа (как на мокапе).
-        // Дети якорятся к ВЕРХУ контейнера, y отсчитывается вниз — поэтому верхний ряд = 0.
+        // ВАЖНО: дети якорены к ВЕРХУ контейнера с pivot сверху — положительный Y
+        // сдвигает элемент ВВЕРХ (наружу), поэтому нижний ряд = ОТРИЦАТЕЛЬНЫЙ y.
         hpFill = CreateBar(rootObj.transform, "HP_Bar", hpColor, defaultFont,
             new Vector2(0f, 0f), barWidth, out hpText);
 
@@ -169,7 +170,7 @@ public class HeroStatsBarsUI : MonoBehaviour
         // правее — уровень и нераспределённые очки
         float xpBarWidth = barWidth * 2f + barGap;
         xpFill = CreateBar(rootObj.transform, "XP_Bar", xpColor, defaultFont,
-            new Vector2(0f, barHeight + barGap), xpBarWidth, out xpText);
+            new Vector2(0f, -(barHeight + barGap)), xpBarWidth, out xpText);
 
         // Уровень (крупная цифра) и поинты — правее полосы опыта
         levelText = CreateLabel(rootObj.transform, "Level_Label", defaultFont,
