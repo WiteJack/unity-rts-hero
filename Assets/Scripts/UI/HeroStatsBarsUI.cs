@@ -63,9 +63,23 @@ public class HeroStatsBarsUI : MonoBehaviour
             {
                 heroSearchTimer = 0.5f;
                 hero = FindAnyObjectByType<HeroStats>();
-                if (hero != null) heroXP = hero.GetComponent<HeroExperience>();
             }
             if (hero == null) return;
+        }
+
+        // HeroExperience мог быть добавлен позже или не на том же объекте, что HeroStats —
+        // поэтому ищем его ОТДЕЛЬНО и ТОЖЕ с ретраями: на герое, на детях героя, по сцене.
+        // Без этого полоска опыта навсегда замирает на нуле, хотя HP/мана работают.
+        if (heroXP == null)
+        {
+            heroSearchTimer -= Time.deltaTime;
+            if (heroSearchTimer <= 0f)
+            {
+                heroSearchTimer = 0.5f;
+                heroXP = hero.GetComponent<HeroExperience>();
+                if (heroXP == null) heroXP = hero.GetComponentInChildren<HeroExperience>();
+                if (heroXP == null) heroXP = FindAnyObjectByType<HeroExperience>();
+            }
         }
         if (hpFill == null) return;
 

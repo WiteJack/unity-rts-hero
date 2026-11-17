@@ -33,6 +33,9 @@ public class HeroExperience : MonoBehaviour
     [Tooltip("Текущий накопленный опыт в пределах уровня")]
     public float currentXP = 0f;
 
+    [Tooltip("Писать в консоль каждый приход опыта (для отладки полоски опыта)")]
+    public bool logXPGain = false;
+
     [Header("Эффект повышения уровня (кодом, URP emission)")]
     public float glowDuration = 2f;
     public Color glowColor = new Color(1f, 0.85f, 0.3f);   // золотистое свечение
@@ -64,6 +67,8 @@ public class HeroExperience : MonoBehaviour
         if (maxLevel > 0 && level >= maxLevel) return;
 
         currentXP += amount;
+        if (logXPGain)
+            Debug.Log($"[ОПЫТ] {gameObject.name}: +{amount} → {currentXP}/{XPToNextLevel} (уровень {level})");
 
         // Повышаем уровень, пока хватает опыта (возможно несколько раз за раз)
         bool leveledUp = false;
