@@ -1,34 +1,36 @@
 using UnityEngine;
-using System.Reflection;
 
 /// <summary>
-/// Непрерывная стрельба для стрелка (Allies_Shooter).
+/// Непрерывная стрельба для стрелка (Allies_Shooter) БЕЗ новых параметров Animator.
 /// Вешается на КОРЕНЬ префаба рядом с BattleAI и UnitStats.
 ///
-/// Что делает: пока у BattleAI есть живая цель в радиусе атаки — держит Animator
-/// в состоянии атаки через bool-параметр (по умолчанию "IsAttacking"), не давая
-/// ему откатываться в Idle между выстрелами. Урон наносит BattleAI через
-/// анимационное событие OnAttackHitEvent, то есть один цикл клипа = один выстрел,
-/// а темп цикла задаёт AttackSpeedMult.
+/// Принцип «заморозки»: пока у BattleAI есть живая цель в радиусе атаки, скрипт
+/// перезапускает клип атаки каждые 1/attackSpeed секунд, а когда клип доигрывает
+/// до точки заморозки (чуть ПОСЛЕ кадра выстрела — анимационного события
+/// OnAttackHitEvent) — ставит anim.speed = 0 и держит позу выстрела до следующего
+/// цикла. Урон наносит BattleAI через событие OnAttackHitEvent, как раньше.
 ///
-/// Героя не затрагивает: скрипт автоматически отключается, если рядом нет UnitStats
-/// (у героя HeroStats). Общие BattleAI/UnitStats/HeroStats не изменяются.
-///
-/// Требуемая настройка Animator (Shooter_controller):
-/// 1. Параметр bool "IsAttacking".
-/// 2. У клипа Shooter_Attack включён Loop Time (окно Animation, Import Settings).
-/// 3. Переход Shooter_Attack -> Shooter_Idle: БЕЗ Has Exit Time, условие IsAttacking = false.
-/// 4. Переходы Idle/Run -> Shooter_Attack: по триггеру OnAttack (как было).
+/// Animator настраивать НЕ нужно: ни параметров, ни изменений переходов.
+/// Героя не затрагивает: скрипт отключается, если рядом нет UnitStats (у героя HeroStats).
 /// </summary>
 public class ShooterAttackLoop : MonoBehaviour
 {
-    [Tooltip("Имя bool-параметра Animator, который держит состояние атаки зацикленным")]
-    public string attackingBoolName = "IsAttacking";
+    [Tooltip("Имя состояния атаки в Animator (как в окне Animator)")]
+    public string attackStateName = "Shooter_Attack";
+
+    [Tooltip("Нормализованное время клипа (0..1), на котором замораживаем позу. " +
+             "Поставь чуть ПОЗЖЕ кадра выстрела (анимационного события OnAttackHitEvent на клипе).")]
+    [Range(0.05f, 1f)] public float freezeAtNormalizedTime = 0.9f;
 
     private BattleAI battleAI;
     private UnitStats myStats;
     private Animator anim;
-    private FieldInfo currentTargetField;
+    private System.Reflection.FieldInfo currentTargetField;
+
+    private int attackStateHash;
+    private float attackClipLength = 1f;
+    private float nextShotTime;
+    private bool frozen;
 
     void Awake()
     {
@@ -44,21 +46,38 @@ public class ShooterAttackLoop : MonoBehaviour
         if (battleAI != null)
             currentTargetField = typeof(BattleAI).GetField("currentTarget", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
-        if (battleAI == null || myStats == null || anim == null || currentTargetField == null)
+        attackStateHash = Animator.StringToHash(attackStateName);
+
+        // Реальная длина клипа атаки берётся из контроллера — не зависим от baseAttackClipLength
+        if (anim != null && anim.runtimeAnimatorController != null)
         {
-            // Не наш комплект (например, герой с HeroStats) — выключаемся, ничего не ломаем
-            enabled = false;
+            foreach (var clip in anim.runtimeAnimatorController.animationClips)
+            {
+                if (clip != null && clip.name == attackStateName)
+                {
+                    attackClipLength = Mathf.Max(0.01f, clip.length);
+                    break;
+                }
+            }
         }
+
+        // Не наш комплект (например, герой с HeroStats) — выключаемся, ничего не ломаем
+        if (battleAI == null || myStats == null || anim == null || currentTargetField == null)
+            enabled = false;
     }
 
-    /// <summary>
-    /// Именно LateUpdate: аниматор считается после всех Update, поэтому наше значение
-    /// AttackSpeedMult перекрывает перезапись из UnitStats.PlayAttackAnimation(),
-    /// и не нужно трогать общий код BattleAI/UnitStats.
-    /// </summary>
+    void OnDisable()
+    {
+        Unfreeze();
+    }
+
     void LateUpdate()
     {
-        if (myStats.isDead) return;
+        if (myStats.isDead)
+        {
+            Unfreeze(); // обязательно разморозить, иначе триггер OnDeath не сработает
+            return;
+        }
 
         bool inAttackRange = false;
 
@@ -69,19 +88,42 @@ public class ShooterAttackLoop : MonoBehaviour
             inAttackRange = distance <= battleAI.attackRange;
         }
 
-        anim.SetBool(attackingBoolName, inAttackRange);
-
-        if (inAttackRange)
+        if (!inAttackRange)
         {
-            // Длительность одного цикла = длина клипа / AttackSpeedMult.
-            // Если baseAttackClipLength в BattleAI равен реальной длине клипа атаки,
-            // один цикл занимает ровно 1/attackSpeed секунд — темп стрельбы из UnitStats.
-            anim.SetFloat("AttackSpeedMult", myStats.attackSpeed * battleAI.baseAttackClipLength);
+            Unfreeze(); // цель ушла — возвращаем аниматор в обычный режим (Idle/Run как раньше)
+            return;
         }
-        else
+
+        // Пора стрелять: перезапускаем клип с начала — событие выстрела сработает заново
+        if (Time.time >= nextShotTime)
         {
-            // Гасим висящий триггер, чтобы после потери цели стрелок не дёрнулся в атаку из Idle
-            anim.ResetTrigger("OnAttack");
+            Unfreeze();
+            anim.Play(attackStateHash, 0, 0f);
+            // Множитель так, чтобы клип длился ровно 1/attackSpeed секунд
+            anim.SetFloat("AttackSpeedMult", myStats.attackSpeed * attackClipLength);
+            nextShotTime = Time.time + 1f / Mathf.Max(0.01f, myStats.attackSpeed);
+            return;
+        }
+
+        // Заморозка: клип доиграл до точки заморозки — держим позу выстрела до следующего цикла
+        if (!frozen)
+        {
+            var state = anim.GetCurrentAnimatorStateInfo(0);
+            if (state.shortNameHash == attackStateHash && !anim.IsInTransition(0) &&
+                state.normalizedTime >= freezeAtNormalizedTime)
+            {
+                anim.speed = 0f;
+                frozen = true;
+            }
+        }
+    }
+
+    void Unfreeze()
+    {
+        if (frozen)
+        {
+            anim.speed = 1f;
+            frozen = false;
         }
     }
 }
