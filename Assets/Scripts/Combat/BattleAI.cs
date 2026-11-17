@@ -143,6 +143,15 @@ public class BattleAI : MonoBehaviour
     {
         if (currentTarget == null || IsTargetDead(currentTarget)) return;
 
+        // Стрелок: урон наносит летящий снаряд (как у башни), а не мгновенный удар.
+        // Если на юните есть ShooterProjectileAttack — отдаём выстрел ему и выходим.
+        var projectileShooter = GetComponent<ShooterProjectileAttack>();
+        if (projectileShooter != null && projectileShooter.enabled)
+        {
+            projectileShooter.LaunchProjectile(currentTarget);
+            return;
+        }
+
         var targetHeroStats = currentTarget.GetComponent<HeroStats>();
         if (targetHeroStats == null) targetHeroStats = currentTarget.GetComponentInParent<HeroStats>();
 
