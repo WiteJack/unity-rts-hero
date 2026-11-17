@@ -48,6 +48,23 @@ public class HeroStatsBarsUI : MonoBehaviour
     private Text hpText, manaText, xpText, levelText, pointsText;
     private float heroSearchTimer;
 
+    // ВАЖНО: Image.Type.Filled в uGUI НЕ работает без спрайта — при null-спрайте
+    // Image всегда рисуется как Simple (полный прямоугольник), fillAmount игнорируется
+    // и полоска «застывает» полной. Поэтому полоскам выдаётся встроенный белый спрайт.
+    private static Sprite _whiteSprite;
+    private static Sprite WhiteSprite
+    {
+        get
+        {
+            if (_whiteSprite == null)
+            {
+                _whiteSprite = Sprite.Create(Texture2D.whiteTexture, new Rect(0f, 0f, 4f, 4f),
+                    new Vector2(0.5f, 0.5f), 100f);
+            }
+            return _whiteSprite;
+        }
+    }
+
     void Start()
     {
         BuildBars();
@@ -182,6 +199,7 @@ public class HeroStatsBarsUI : MonoBehaviour
         bgRect.sizeDelta = new Vector2(barWidth, barHeight);
 
         Image bgImage = bgObj.AddComponent<Image>();
+        bgImage.sprite = WhiteSprite; // без спрайта Filled не работает (и вообще рендер uGUI стабильнее со спрайтом)
         bgImage.color = barBackColor;
         bgImage.raycastTarget = false; // клики RTS проходят сквозь HUD
 
@@ -196,6 +214,7 @@ public class HeroStatsBarsUI : MonoBehaviour
         fillRect.offsetMax = new Vector2(-2f, -2f);
 
         Image fillImage = fillObj.AddComponent<Image>();
+        fillImage.sprite = WhiteSprite; // ОБЯЗАТЕЛЬНО для Image.Type.Filled — без спрайта заполнение не обрезается
         fillImage.color = fillColor;
         fillImage.raycastTarget = false;
         fillImage.type = Image.Type.Filled;
