@@ -160,14 +160,16 @@ public class HeroStatsBarsUI : MonoBehaviour
         // Ряд 1 (верхний): HP слева, мана справа (как на мокапе).
         // Дети якорятся к ВЕРХУ контейнера, y отсчитывается вниз — поэтому верхний ряд = 0.
         hpFill = CreateBar(rootObj.transform, "HP_Bar", hpColor, defaultFont,
-            new Vector2(0f, 0f), out hpText);
+            new Vector2(0f, 0f), barWidth, out hpText);
 
         manaFill = CreateBar(rootObj.transform, "Mana_Bar", manaColor, defaultFont,
-            new Vector2(barWidth + barGap, 0f), out manaText);
+            new Vector2(barWidth + barGap, 0f), barWidth, out manaText);
 
-        // Ряд 2 (нижний): опыт ПОД маной (справа), правее — уровень и нераспределённые очки
+        // Ряд 2 (нижний): опыт — на ВСЮ ширину обоих рядов (HP + мана + зазор),
+        // правее — уровень и нераспределённые очки
+        float xpBarWidth = barWidth * 2f + barGap;
         xpFill = CreateBar(rootObj.transform, "XP_Bar", xpColor, defaultFont,
-            new Vector2(barWidth + barGap, barHeight + barGap), out xpText);
+            new Vector2(0f, barHeight + barGap), xpBarWidth, out xpText);
 
         // Уровень (крупная цифра) и поинты — правее полосы опыта
         levelText = CreateLabel(rootObj.transform, "Level_Label", defaultFont,
@@ -185,7 +187,7 @@ public class HeroStatsBarsUI : MonoBehaviour
 
     /// <summary>Создаёт одну полоску: тёмный фон + заполнение (Filled) + опциональный текст по центру.</summary>
     private Image CreateBar(Transform parent, string barName, Color fillColor, Font font,
-        Vector2 localPos, out Text centerText)
+        Vector2 localPos, float width, out Text centerText)
     {
         // Фон
         GameObject bgObj = new GameObject(barName);
@@ -196,7 +198,7 @@ public class HeroStatsBarsUI : MonoBehaviour
         bgRect.anchorMax = new Vector2(0f, 1f);
         bgRect.pivot = new Vector2(0f, 1f);
         bgRect.anchoredPosition = localPos;
-        bgRect.sizeDelta = new Vector2(barWidth, barHeight);
+        bgRect.sizeDelta = new Vector2(width, barHeight);
 
         Image bgImage = bgObj.AddComponent<Image>();
         bgImage.sprite = WhiteSprite; // без спрайта Filled не работает (и вообще рендер uGUI стабильнее со спрайтом)
