@@ -10,8 +10,12 @@ using UnityEngine.AI;
 /// - Через respawnDelaySeconds (по умолчанию 2 минуты) герой СПАВНИТСЯ ЗАНОВО на точке спавна:
 ///   телепорт, полное HP/мана, анимация смерти сбрасывается (выход в Idle), контроль игроцу
 ///   возвращается. Уровень/опыт/статы при этом НЕ теряются (объект героя тот же).
-/// - Точка спавна берётся у GameSpawner (spawnPoint, та же, что при старте матча).
-///   Если GameSpawner не найден — герой возрождается на своей стартовой позиции.
+/// - Точка возрождения берётся так (по приоритету):
+///   1) поле respawnPoint — ПУСТОЙ ОБЪЕКТ на сцене, перетаскивается в Инспектор (рекомендуемый способ
+///      по просьбе владельца: возрождаемся в заранее поставленную точку МАПЫ — камера больше не улетает);
+///   2) объект на сцене с именем RespawnPoint (если он есть — поле заполнять не обязательно);
+///   3) GameSpawner.spawnPoint (та же точка, где герой появился при старте матча);
+///   4) стартовая позиция самого героя (аварийный вариант).
 ///
 /// Герой намеренно НЕ уничтожается и не пересоздаётся — так не ломаются ссылки UI
 /// (HeroStatsBarsUI, HeroStatsPanel, HeroExperience) и опыт с уровнем остаются у героя.
@@ -26,6 +30,9 @@ public class HeroRespawn : MonoBehaviour
 
     [Tooltip("Логировать смерть и возрождение в консоль")]
     public bool logEvents = true;
+
+    [Tooltip("ТОЧКА ВОЗРОЖДЕНИЯ: создай на сцене пустой объект (GameObject > Create Empty), поставь его в нужное место карты и перетащи сюда. Если поле пустое — скрипт сам найдёт объект с именем RespawnPoint, затем возьмёт GameSpawner.spawnPoint.")]
+    public Transform respawnPoint;
 
     /// <summary>Герой мёртв и ждёт возрождения.</summary>
     public bool IsWaitingForRespawn { get { return waitingRespawn; } }
@@ -58,17 +65,34 @@ public class HeroRespawn : MonoBehaviour
 
         anim = GetComponentInChildren<Animator>(true);
 
-        // Точка спавна героя: GameSpawner.spawnPoint (та же, где герой появился в начале матча)
-        GameSpawner spawner = FindAnyObjectByType<GameSpawner>();
-        if (spawner != null && spawner.spawnPoint != null)
+        // ТОЧКА ВОЗРОЖДЕНИЯ (по приоритету): поле respawnPoint -> объект "RespawnPoint" -> GameSpawner.spawnPoint
+        if (respawnPoint != null)
         {
-            spawnPoint = spawner.spawnPoint;
+            spawnPoint = respawnPoint;
+        }
+        else
+        {
+            GameObject marker = GameObject.Find("RespawnPoint");
+            if (marker != null) spawnPoint = marker.transform;
+        }
+
+        if (spawnPoint == null)
+        {
+            GameSpawner spawner = FindAnyObjectByType<GameSpawner>();
+            if (spawner != null && spawner.spawnPoint != null)
+                spawnPoint = spawner.spawnPoint;
+        }
+
+        if (spawnPoint != null)
+        {
+            if (logEvents)
+                Debug.Log($"[Возрождение] Точка возрождения: {spawnPoint.name} ({spawnPoint.position}).");
         }
         else
         {
             fallbackSpawnPos = transform.position;
             if (logEvents)
-                Debug.LogWarning("[Возрождение] GameSpawner/точка спавна не найдены — герой будет возрождаться на своей стартовой позиции.");
+                Debug.LogWarning("[Возрождение] Точка возрождения не задана (ни поле, ни объект RespawnPoint, ни GameSpawner.spawnPoint) — герой будет возрождаться на своей стартовой позиции.");
         }
 
         if (stats == null && logEvents)
@@ -111,7 +135,7 @@ public class HeroRespawn : MonoBehaviour
         waitingRespawn = false;
         respawnTimer = 0f;
 
-        // Спавн на точке спавна героя
+        // Спавн на точке возрождения (пустой объект на карте — камера не улетает за карту)
         Vector3 pos = spawnPoint != null ? spawnPoint.position : fallbackSpawnPos;
         if (agent != null)
         {

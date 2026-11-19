@@ -3,21 +3,29 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 
 /// <summary>
-/// НИЖНЯЯ ПАНЕЛЬ ИНТЕРФЕЙСА (задание: "подготовь нижнюю часть интерфейса, именно скриптово").
-/// Вешается на ЛЮБОЙ объект (проще всего на Main Camera, как HeroStatsPanel/HeroStatsBarsUI).
+/// НИЖНЯЯ ПАНЕЛЬ ИНТЕРФЕЙСА (раскладка по мокапу ui1: навыки СЛЕВА, инфо в ЦЕНТРЕ, снаряжение СПРАВА).
+/// Вешается на ЛЮБОЙ объект (проще всего на Main Camera, как HeroStatsBarsUI).
 ///
-/// Слева внизу — СЛОТЫ СНАРЯЖЕНИЯ: 6 обычных (по диздоку) + 2 золотых слота уникальных
-/// (уникальное снаряжение «Щит империи» и уникальный артефакт «Благословенный меч» Андрона;
-/// артефакт помечен цифрой "10" — открывается после 10 мета-уровня игрока).
-///
-/// Справа внизу — КНОПКИ НАВЫКОВ АНДРОНА (5 штук: Q W E R F):
+/// СЛЕВА внизу — КНОПКИ НАВЫКОВ АНДРОНА (5 штук, синие, идут 1 2 3 4 5 слева направо):
 ///   - иконка (нет картинки — БЕЛАЯ иконка, правило ТЗ),
 ///   - ЦИФРА АКТИВАЦИИ — уровень навыка "N/5" (у 5-й кнопки — нераспределённые очки),
 ///   - затемнение перезарядки у активных навыков,
-///   - ЗЕЛЁНЫЙ "+" когда навык можно прокачать (клик по "+" изучает следующий уровень).
+///   - подсказка «жми +» на неизученном навыке (когда его уже можно учить),
+///   - оранжевый "+" когда навык можно прокачать (клик по "+" изучает следующий уровень).
+///
+/// В ЦЕНТРЕ над полосками HP/маны — ЖИВЫЕ ЦИФРЫ в двух колонках:
+///   - АТРИБУТЫ: Сила, Живучесть, Выносливость, Ловкость, Мудрость, Сила воли —
+///     читаются прямо из HeroStats ПОСЛЕ всех дельт (шмот + «+»-очки + уники), обновляются 5 раз/сек;
+///   - ХАРАКТЕРИСТИКИ: те же 9 строк, что были в HeroStatsPanel.
+///   ВАЖНО: старый компонент HeroStatsPanel теперь можно ВЫКЛЮЧИТЬ на камере,
+///   чтобы характеристики не рисовались дважды (панель характеристик переехала сюда, по мокапу).
+///
+/// СПРАВА внизу — СЛОТЫ СНАРЯЖЕНИЯ: 6 обычных (по диздоку) + 2 золотых слота уникальных
+/// (уникальное снаряжение «Щит империи» и уникальный артефакт «Благословенный меч» Андрона;
+/// артефакт помечен цифрой "10" — открывается после 10 мета-уровня игрока).
 ///
 /// Клик по обычному слоту — снять предмет (он падает на пол сундучком).
-/// Клик по активному навыку — использовать. Клик по 5-й кнопке (F) — вложить 1 очко характеристик.
+/// Клик по активному навыку — использовать. Клик по 5-й кнопке — вложить 1 очко характеристик.
 ///
 /// НА ГЕРОЕ должны висеть: AndronSkills (навыки), EquipmentSystem (6 слотов), AndronUniqueEquipment
 /// (уники, опционально). Все они добавляются пользователем на префаб героя; панель ищет их сама.
@@ -26,30 +34,43 @@ using UnityEngine.EventSystems;
 /// </summary>
 public class HeroBottomPanelUI : MonoBehaviour
 {
-    [Header("Слева внизу — слоты снаряжения")]
+    [Header("Справа внизу — слоты снаряжения")]
     public Vector2 slotsOffset = new Vector2(20f, 20f);
     public float slotSize = 48f;
     public float slotGap = 6f;
 
-    [Header("Справа внизу — кнопки навыков")]
-    public Vector2 skillsOffset = new Vector2(-20f, 20f);
+    [Header("Слева внизу — кнопки навыков (1 2 3 4 5, плюсик в конце)")]
+    public Vector2 skillsOffset = new Vector2(20f, 20f);
     public float skillSize = 52f;
     public float skillGap = 10f;
 
+    [Header("Центр низа — атрибуты + характеристики (живые цифры)")]
+    [Tooltip("Сдвиг центрального блока от низа экрана (ставится выше полосок HP/маны)")]
+    public Vector2 infoOffset = new Vector2(0f, 130f);
+    public float colWidth = 200f;
+    public float colGap = 60f;
+    public float rowHeight = 18f;
+    public int infoFontSize = 13;
+
     [Header("Цвета")]
     public Color panelBackColor = new Color(0.06f, 0.06f, 0.09f, 0.65f);
-    public Color slotBackColor = new Color(0.12f, 0.14f, 0.25f, 0.95f);  // синие слоты с мокапа
+    public Color skillBackColor = new Color(0.07f, 0.33f, 0.45f, 0.95f);  // синий навык с мокапа
+    public Color slotBackColor = new Color(0.12f, 0.14f, 0.25f, 0.95f);   // обычные слоты
     public Color uniqueSlotBackColor = new Color(0.18f, 0.14f, 0.05f, 0.95f);
-    public Color upgradeColor = new Color(0.2f, 0.85f, 0.25f);            // зелёный "+"
+    public Color upgradeColor = new Color(1f, 0.65f, 0.1f);               // оранжевый "+" (как полоска опыта)
     public Color textColor = Color.white;
     public Color specialSlotColor = new Color(1f, 0.82f, 0.2f);           // золото — уники
+    public Color headerColor = new Color(1f, 0.85f, 0.4f);                // заголовки колонок
 
     private HeroStats hero;
     private HeroExperience heroXP;
     private AndronSkills skills;
     private EquipmentSystem equipment;
     private AndronUniqueEquipment uniques;
+    private BattleAI heroAI;
+    private UnityEngine.AI.NavMeshAgent heroAgent;
     private float heroSearchTimer;
+    private float infoRefreshTimer;
 
     private Font font;
     private Image[] slotBottoms;    // тонкая полоска-подсветка внизу слота (цвет тира)
@@ -57,6 +78,15 @@ public class HeroBottomPanelUI : MonoBehaviour
     private Text[]  slotTierTexts;  // "Т1".."Т4" / метки уников
 
     private SkillButton[] skillButtons;
+    private Text[] attrValueTexts;  // ЖИВЫЕ цифры атрибутов (центр)
+    private Text[] charValueTexts;  // живые цифры характеристик (центр)
+
+    private static readonly string[] AttrNames = { "Сила", "Живучесть", "Выносливость", "Ловкость", "Мудрость", "Сила воли" };
+    private static readonly string[] CharNames =
+    {
+        "Здоровье", "Реген. здоровья", "Атака", "Скор. атаки", "Дальн. атаки",
+        "Скор. движения", "Защита", "Мана", "Реген. маны"
+    };
 
     /// <summary>Кнопка навыка: фон, иконка, цифра уровня, "+", затемнение перезарядки.</summary>
     private class SkillButton
@@ -111,12 +141,22 @@ public class HeroBottomPanelUI : MonoBehaviour
                     equipment = hero.GetComponent<EquipmentSystem>();
                     uniques = hero.GetComponent<AndronUniqueEquipment>();
                     skills = hero.GetComponent<AndronSkills>();
+                    heroAI = hero.GetComponent<BattleAI>();
+                    heroAgent = hero.GetComponent<UnityEngine.AI.NavMeshAgent>();
                 }
             }
             if (hero == null) return;
         }
 
         RefreshPanel();
+
+        // ЖИВЫЕ цифры атрибутов/характеристик — 5 раз в секунду
+        infoRefreshTimer -= Time.deltaTime;
+        if (infoRefreshTimer <= 0f)
+        {
+            infoRefreshTimer = 0.2f;
+            RefreshInfoValues();
+        }
     }
 
     // ==================== ПОСТРОЕНИЕ UI ====================
@@ -140,9 +180,30 @@ public class HeroBottomPanelUI : MonoBehaviour
         root.anchorMax = new Vector2(1f, 0f);
         root.pivot = new Vector2(0.5f, 0f);
         root.anchoredPosition = Vector2.zero;
-        root.sizeDelta = new Vector2(0f, 200f);
+        root.sizeDelta = new Vector2(0f, 230f);
 
-        // ---------- слоты слева: 6 обычных + 2 уникальных ----------
+        // ---------- центр: ЖИВЫЕ атрибуты + характеристики (над полосками HP/маны) ----------
+        CreateInfoBlock(root);
+
+        // ---------- навыки СЛЕВА (1 2 3 4 5, идут слева направо) ----------
+        var skillsData = new (string name, string hotkey, AndronSkills.SkillId id)[]
+        {
+            ("Ярость короля",  "1", AndronSkills.SkillId.Rage),
+            ("Взрыв щита",     "2", AndronSkills.SkillId.ShieldBlast),
+            ("Щит империи",    "3", AndronSkills.SkillId.EmpireShieldPassive),
+            ("Родословная",    "4", AndronSkills.SkillId.BloodlinePassive),
+            ("Атрибуты",       "5", AndronSkills.SkillId.Attributes), // плюсик в конце
+        };
+
+        int skillCount = skillsData.Length;
+        skillButtons = new SkillButton[skillCount];
+        for (int i = 0; i < skillCount; i++)
+        {
+            var data = skillsData[i];
+            skillButtons[i] = CreateSkillButton(root, i, data.name, data.hotkey, data.id);
+        }
+
+        // ---------- снаряжение СПРАВА: 6 обычных + 2 уникальных ----------
         const int totalSlots = 8;
         slotBottoms = new Image[totalSlots];
         slotIcons = new Image[totalSlots];
@@ -153,9 +214,9 @@ public class HeroBottomPanelUI : MonoBehaviour
         var slotsGO = new GameObject("EquipmentSlots", typeof(RectTransform));
         var slotsRect = (RectTransform)slotsGO.transform;
         slotsRect.SetParent(root, false);
-        slotsRect.anchorMin = new Vector2(0f, 0f);
-        slotsRect.anchorMax = new Vector2(0f, 0f);
-        slotsRect.pivot = new Vector2(0f, 0f);
+        slotsRect.anchorMin = new Vector2(1f, 0f);
+        slotsRect.anchorMax = new Vector2(1f, 0f);
+        slotsRect.pivot = new Vector2(1f, 0f);
         slotsRect.anchoredPosition = slotsOffset;
         slotsRect.sizeDelta = new Vector2(slotsWidth, slotSize);
 
@@ -168,26 +229,92 @@ public class HeroBottomPanelUI : MonoBehaviour
             slotIcons[i] = icon;
             slotTierTexts[i] = tier;
         }
+    }
 
-        // ---------- кнопки навыков справа (панель правит имена/клавиши) ----------
-        var skillsData = new (string name, string hotkey, AndronSkills.SkillId id)[]
+    /// <summary>Центральный блок: две колонки живых цифр (АТРИБУТЫ + ХАРАКТЕРИСТИКИ).</summary>
+    private void CreateInfoBlock(Transform root)
+    {
+        var infoGO = new GameObject("InfoCenter", typeof(RectTransform));
+        var infoRect = (RectTransform)infoGO.transform;
+        infoRect.SetParent(root, false);
+        infoRect.anchorMin = new Vector2(0.5f, 0f);
+        infoRect.anchorMax = new Vector2(0.5f, 0f);
+        infoRect.pivot = new Vector2(0.5f, 0f);
+        infoRect.anchoredPosition = infoOffset;
+        infoRect.sizeDelta = new Vector2(colWidth * 2f + colGap, rowHeight * CharNames.Length + 24f);
+
+        // лёгкий фон панели (клики RTS проходят насквозь)
+        var bg = infoGO.AddComponent<Image>();
+        bg.sprite = WhiteSprite;
+        bg.color = panelBackColor;
+        bg.raycastTarget = false;
+
+        attrValueTexts = CreateInfoColumn(infoRect, "АТРИБУТЫ", AttrNames, 0);
+        charValueTexts = CreateInfoColumn(infoRect, "ХАРАКТЕРИСТИКИ", CharNames, 1);
+    }
+
+    /// <summary>Колонка живых цифр: заголовок + строки «имя … значение». Возвращает тексты значений.</summary>
+    private Text[] CreateInfoColumn(RectTransform parent, string header, string[] names, int columnIndex)
+    {
+        var colGO = new GameObject("Col_" + header, typeof(RectTransform));
+        var colRect = (RectTransform)colGO.transform;
+        colRect.SetParent(parent, false);
+        colRect.anchorMin = new Vector2(0.5f, 0f);
+        colRect.anchorMax = new Vector2(0.5f, 0f);
+        colRect.pivot = new Vector2(0f, 0f);
+        // колонка 0 — слева от центра, колонка 1 — справа от центра
+        float centerXOffset = columnIndex == 0 ? -colWidth - colGap * 0.5f : colGap * 0.5f;
+        colRect.anchoredPosition = new Vector2(centerXOffset, 0f);
+        colRect.sizeDelta = new Vector2(colWidth, rowHeight * names.Length + 24f);
+
+        // заголовок
+        var head = CreateLabel(colRect, "Header", infoFontSize + 1);
+        head.alignment = TextAnchor.MiddleLeft;
+        head.color = headerColor;
+        head.fontStyle = FontStyle.Bold;
+        head.text = header;
+        head.rectTransform.anchorMin = new Vector2(0f, 1f);
+        head.rectTransform.anchorMax = new Vector2(1f, 1f);
+        head.rectTransform.pivot = new Vector2(0f, 1f);
+        head.rectTransform.anchoredPosition = new Vector2(8f, 0f);
+        head.rectTransform.sizeDelta = new Vector2(0f, 20f);
+
+        // строки
+        var values = new Text[names.Length];
+        for (int i = 0; i < names.Length; i++)
         {
-            ("Ярость короля",  "1", AndronSkills.SkillId.Rage),
-            ("Взрыв щита",     "2", AndronSkills.SkillId.ShieldBlast),
-            ("Щит империи",    "3", AndronSkills.SkillId.EmpireShieldPassive),
-            ("Родословная",    "4", AndronSkills.SkillId.BloodlinePassive),
-            ("Атрибуты",       "5", AndronSkills.SkillId.Attributes), // плюсик в конце
-        };
+            var rowGO = new GameObject("Row_" + names[i], typeof(RectTransform));
+            var rowRect = (RectTransform)rowGO.transform;
+            rowRect.SetParent(colRect, false);
+            rowRect.anchorMin = new Vector2(0f, 1f);
+            rowRect.anchorMax = new Vector2(1f, 1f);
+            rowRect.pivot = new Vector2(0f, 1f);
+            rowRect.anchoredPosition = new Vector2(0f, -22f - i * rowHeight);
+            rowRect.sizeDelta = new Vector2(0f, rowHeight);
 
-        int skillCount = skillsData.Length;
-        float skillsWidth = skillCount * skillSize + (skillCount - 1) * skillGap;
+            var n = CreateLabel(rowRect, "Name", infoFontSize);
+            n.alignment = TextAnchor.LowerLeft;
+            n.color = new Color(0.85f, 0.85f, 0.85f, 0.9f);
+            n.text = names[i];
+            n.rectTransform.anchorMin = new Vector2(0f, 0f);
+            n.rectTransform.anchorMax = new Vector2(1f, 1f);
+            n.rectTransform.pivot = new Vector2(0f, 0f);
+            n.rectTransform.anchoredPosition = new Vector2(8f, 1f);
+            n.rectTransform.sizeDelta = new Vector2(colWidth * 0.6f, 0f);
 
-        skillButtons = new SkillButton[skillCount];
-        for (int i = 0; i < skillCount; i++)
-        {
-            var data = skillsData[i];
-            skillButtons[i] = CreateSkillButton(root, skillsWidth, i, data.name, data.hotkey, data.id);
+            var v = CreateLabel(rowRect, "Value", infoFontSize);
+            v.alignment = TextAnchor.LowerRight;
+            v.fontStyle = FontStyle.Bold;
+            v.text = "…";
+            v.rectTransform.anchorMin = new Vector2(0f, 0f);
+            v.rectTransform.anchorMax = new Vector2(1f, 1f);
+            v.rectTransform.pivot = new Vector2(1f, 0f);
+            v.rectTransform.anchoredPosition = new Vector2(-8f, 1f);
+            v.rectTransform.sizeDelta = new Vector2(colWidth * 0.5f, 0f);
+
+            values[i] = v;
         }
+        return values;
     }
 
     private void CreateSlot(RectTransform parent, int index, bool isUnique,
@@ -196,10 +323,11 @@ public class HeroBottomPanelUI : MonoBehaviour
         var slotGO = new GameObject("Slot_" + index, typeof(RectTransform));
         var rect = (RectTransform)slotGO.transform;
         rect.SetParent(parent, false);
-        rect.anchorMin = new Vector2(0f, 0f);
-        rect.anchorMax = new Vector2(0f, 0f);
-        rect.pivot = new Vector2(0f, 0.5f);
-        rect.anchoredPosition = new Vector2(index * (slotSize + slotGap), 0f);
+        rect.anchorMin = new Vector2(1f, 0f);
+        rect.anchorMax = new Vector2(1f, 0f);
+        rect.pivot = new Vector2(1f, 0f);
+        // слоты идут справа налево: первый — у правого края
+        rect.anchoredPosition = new Vector2(-(index + 1) * slotSize - index * slotGap, 0f);
         rect.sizeDelta = new Vector2(slotSize, slotSize);
 
         // фон слота (кликается — снять предмет)
@@ -247,22 +375,22 @@ public class HeroBottomPanelUI : MonoBehaviour
         click.owner = this;
     }
 
-    private SkillButton CreateSkillButton(RectTransform root, float skillsWidth, int index,
+    private SkillButton CreateSkillButton(RectTransform root, int index,
                                           string skillName, string hotkey, AndronSkills.SkillId id)
     {
         var btnGO = new GameObject("Skill_" + skillName.Replace(" ", "_"), typeof(RectTransform));
         var rect = (RectTransform)btnGO.transform;
         rect.SetParent(root, false);
-        rect.anchorMin = new Vector2(1f, 0f);
-        rect.anchorMax = new Vector2(1f, 0f);
-        rect.pivot = new Vector2(1f, 0f);
-        // кнопки идут справа налево: первая (Q) — у правого края
-        rect.anchoredPosition = skillsOffset + new Vector2(-index * (skillSize + skillGap), 0f);
+        rect.anchorMin = new Vector2(0f, 0f);
+        rect.anchorMax = new Vector2(0f, 0f);
+        rect.pivot = new Vector2(0f, 0f);
+        // кнопки идут слева направо: первая (цифра 1) — у левого края
+        rect.anchoredPosition = skillsOffset + new Vector2(index * (skillSize + skillGap), 0f);
         rect.sizeDelta = new Vector2(skillSize, skillSize);
 
         var bg = btnGO.AddComponent<Image>();
         bg.sprite = WhiteSprite;
-        bg.color = panelBackColor;
+        bg.color = skillBackColor;
         bg.raycastTarget = true;
 
         var btn = new SkillButton { bg = bg, root = rect, id = id, hotkey = hotkey };
@@ -281,7 +409,7 @@ public class HeroBottomPanelUI : MonoBehaviour
         iRect.sizeDelta = new Vector2(skillSize - 16f, skillSize - 36f);
         btn.icon = icon;
 
-        // буква-хоткей по центру кнопки (видно, что это Q/W/E/R/F)
+        // цифра-хоткей по центру кнопки (видно, что это 1/2/3/4/5)
         var hk = CreateLabel(rect, "Hotkey", 18);
         hk.alignment = TextAnchor.MiddleCenter;
         hk.text = hotkey;
@@ -295,7 +423,7 @@ public class HeroBottomPanelUI : MonoBehaviour
         lvl.text = "0/5";
         btn.levelText = lvl;
 
-        // ЗЕЛЁНЫЙ "+" для прокачки (кликабельный, не должен пробивать клик в кнопку под ним)
+        // ОРАНЖЕВЫЙ "+" для прокачки (кликабельный, не должен пробивать клик в кнопку под ним)
         var plusGO = new GameObject("Plus", typeof(RectTransform));
         var plus = plusGO.AddComponent<Image>();
         plus.sprite = WhiteSprite;
@@ -343,7 +471,7 @@ public class HeroBottomPanelUI : MonoBehaviour
         return btn;
     }
 
-    /// <summary>Надпись по общему паттерну проекта (legacy Text, raycastTarget=false, растянута на родителя).</summary>
+    /// <summary>Надпись по общему паттерну проекта (legacy Text, raycastTarget=false).</summary>
     private Text CreateLabel(Transform parent, string name, int fontSize)
     {
         var go = new GameObject(name, typeof(RectTransform));
@@ -419,8 +547,12 @@ public class HeroBottomPanelUI : MonoBehaviour
                 float cd = skills.GetCooldownRemaining(btn.id);
                 float total = btn.id == AndronSkills.SkillId.Rage
                     ? skills.rageCooldown : skills.shieldBlastCooldown;
-                btn.cooldown.fillAmount = Mathf.Clamp01(cd / Mathf.Max(0.01f, total));
-                if (lvl <= 0) { btn.cooldown.fillAmount = 1f; btn.cooldownText.text = "нужен ур. 5"; }
+                btn.cooldown.fillAmount = lvl > 0 ? Mathf.Clamp01(cd / Mathf.Max(0.01f, total)) : 1f;
+                if (lvl <= 0)
+                {
+                    btn.cooldown.fillAmount = 1f;
+                    btn.cooldownText.text = skills.CanUpgrade(btn.id) ? "жми «+»" : "нужен ур. " + (lvl + 1) * 5;
+                }
                 else if (btn.cooldown.fillAmount > 0.02f)
                     btn.cooldownText.text = Mathf.CeilToInt(cd).ToString();
                 else btn.cooldownText.text = "";
@@ -428,9 +560,45 @@ public class HeroBottomPanelUI : MonoBehaviour
             else
             {
                 btn.cooldown.fillAmount = 0f;
-                btn.cooldownText.text = lvl <= 0 ? "—" : "пассив";
+                btn.cooldownText.text = lvl <= 0
+                    ? (skills.CanUpgrade(btn.id) ? "жми «+»" : "нужен ур. " + (lvl + 1) * 5)
+                    : "пассив";
             }
         }
+    }
+
+    /// <summary>ЖИВЫЕ ЦИФРЫ: атрибуты и характеристики читаются из HeroStats ПОСЛЕ всех дельт (шмот + плюсик + уники).</summary>
+    private void RefreshInfoValues()
+    {
+        if (hero == null || attrValueTexts == null || charValueTexts == null) return;
+
+        SetInfo(attrValueTexts, 0, hero.strength);
+        SetInfo(attrValueTexts, 1, hero.vitality);
+        SetInfo(attrValueTexts, 2, hero.endurance);
+        SetInfo(attrValueTexts, 3, hero.agility);
+        SetInfo(attrValueTexts, 4, hero.wisdom);
+        SetInfo(attrValueTexts, 5, hero.willpower);
+
+        SetInfo(charValueTexts, 0, hero.maxHP);
+        SetInfo(charValueTexts, 1, hero.endurance * 0.5f);
+        SetInfo(charValueTexts, 2, hero.strength * 5f);
+        SetInfo(charValueTexts, 3, hero.GetCurrentAttackSpeed());
+        SetInfo(charValueTexts, 4, heroAI != null ? heroAI.attackRange : 0f);
+        SetInfo(charValueTexts, 5, heroAgent != null ? heroAgent.speed : 0f);
+        SetInfo(charValueTexts, 6, hero.GetDefense());
+        SetInfo(charValueTexts, 7, hero.maxMana);
+        SetInfo(charValueTexts, 8, hero.willpower * 0.5f);
+    }
+
+    private static void SetInfo(Text[] arr, int i, float v)
+    {
+        if (arr == null || i < 0 || i >= arr.Length || arr[i] == null) return;
+        arr[i].text = FormatNum(v);
+    }
+
+    private static string FormatNum(float v)
+    {
+        return Mathf.Abs(v - Mathf.Round(v)) < 0.05f ? v.ToString("0") : v.ToString("0.#");
     }
 
     private void RefreshSlot(Image icon, Image bottom, Text tierText, EquipmentDatabase.EquipmentDef def)
@@ -493,25 +661,39 @@ public class HeroBottomPanelUI : MonoBehaviour
 
     public void OnSkillButtonClicked(AndronSkills.SkillId id)
     {
-        if (skills == null) return;
+        if (skills == null)
+        {
+            Debug.LogError("[НАВЫК] На герое НЕ найден компонент AndronSkills — кнопка работать не может!");
+            return;
+        }
         if (PlusClick.lastPlusClickFrame == Time.frameCount) return; // клик пришёл от "+" — игнорируем
+
         if (id == AndronSkills.SkillId.Attributes)
         {
             if (skills.UnspentPoints <= 0)
                 Debug.Log("[НАВЫК] Нет нераспределённых очков — очки дают уровни героя (5-я кнопка, цифра 5).");
             skills.SpendAttributePoint();
+            return;
         }
-        else
+
+        int lvl = skills.GetSkillLevel(id);
+        if (lvl <= 0)
         {
-            if (!skills.CastSkill(id))
-                Debug.Log($"[НАВЫК] {id}: активировать нельзя — либо навык не изучен (нужен уровень героя 5+ и зелёный «+» на кнопке), либо идёт перезарядка.");
+            Debug.Log($"[НАВЫК] {id}: НЕ изучен. Учи через ОРАНЖЕВЫЙ «+» на кнопке (открывается на {(lvl + 1) * 5}-м уровне героя), после этого кнопка будет активировать навык.");
+            return;
         }
+        if (!skills.CastSkill(id))
+            Debug.Log($"[НАВЫК] {id}: сейчас нельзя — идёт перезарядка ({skills.GetCooldownRemaining(id):0.0} сек) или герой мёртв.");
     }
 
     public void OnPlusClicked(AndronSkills.SkillId id)
     {
         PlusClick.lastPlusClickFrame = Time.frameCount;
-        if (skills == null) return;
+        if (skills == null)
+        {
+            Debug.LogError("[НАВЫК] На герое НЕ найден компонент AndronSkills — «+» работать не может!");
+            return;
+        }
         if (!skills.UpgradeSkill(id))
             Debug.Log($"[НАВЫК] {id}: прокачка недоступна (максимум 5; новый уровень скиллов открывается каждые 5 уровней героя)");
     }
