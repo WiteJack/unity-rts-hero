@@ -11,6 +11,7 @@ using UnityEngine.UI;
 /// рисуется в Screen Space Overlay, от камеры не зависит. Canvas создаёт/находит сам.
 ///
 /// Полоски — Image.Type.Filled, заполнение обновляется каждый кадр из HeroStats/HeroExperience.
+/// Чуть ВЫШЕ полосок HP/маны — таймер возрождения героя (HeroRespawn), виден только пока герой мёртв.
 /// Временное решение «чтобы работало»: legacy Text без ассетов, при реворке UI заменить.
 /// </summary>
 public class HeroStatsBarsUI : MonoBehaviour
@@ -46,6 +47,8 @@ public class HeroStatsBarsUI : MonoBehaviour
     private HeroExperience heroXP;
     private Image hpFill, manaFill, xpFill;
     private Text hpText, manaText, xpText, levelText, pointsText;
+    private Text respawnText;
+    private HeroRespawn heroRespawn;
     private float heroSearchTimer;
 
     // ВАЖНО: Image.Type.Filled в uGUI НЕ работает без спрайта — при null-спрайте
@@ -96,9 +99,27 @@ public class HeroStatsBarsUI : MonoBehaviour
                 heroXP = hero.GetComponent<HeroExperience>();
                 if (heroXP == null) heroXP = hero.GetComponentInChildren<HeroExperience>();
                 if (heroXP == null) heroXP = FindAnyObjectByType<HeroExperience>();
+
+                // HeroRespawn (смерть/возрождение героя) ищем в том же ретрае — таймер над полосками
+                if (heroRespawn == null) heroRespawn = FindAnyObjectByType<HeroRespawn>();
             }
         }
         if (hpFill == null) return;
+
+        // Таймер возрождения — чуть ВЫШЕ полосок HP/маны, виден только пока герой ждёт возрождения
+        if (respawnText != null)
+        {
+            if (heroRespawn != null && heroRespawn.IsWaitingForRespawn)
+            {
+                int totalSec = Mathf.CeilToInt(heroRespawn.RespawnTimeRemaining);
+                respawnText.text = string.Format("Возрождение: {0}:{1:00}", totalSec / 60, totalSec % 60);
+                respawnText.gameObject.SetActive(true);
+            }
+            else
+            {
+                respawnText.gameObject.SetActive(false);
+            }
+        }
 
         // HP: текущее / максимальное
         float hpRatio = hero.maxHP > 0f ? Mathf.Clamp01(hero.currentHP / hero.maxHP) : 0f;
@@ -184,6 +205,16 @@ public class HeroStatsBarsUI : MonoBehaviour
             new Vector2(labelWidth * 0.55f, barHeight * 2f + barGap),
             TextAnchor.LowerLeft, Mathf.RoundToInt(barHeight * 0.8f), FontStyle.Normal);
         pointsText.text = "0";
+
+        // Таймер возрождения — ПОЛНОСТЬЮ над контейнером (ряд полосок HP/маны начинается с y=0,
+        // а положительный Y у якоря сверху уводит ВВЕРХ, наружу) — поэтому y = barHeight + зазор
+        respawnText = CreateLabel(rootObj.transform, "Respawn_Label", defaultFont,
+            new Vector2(0f, barHeight + 4f),
+            new Vector2(barWidth * 2f + barGap, barHeight),
+            TextAnchor.MiddleCenter, Mathf.RoundToInt(barHeight * 0.8f), FontStyle.Bold);
+        respawnText.color = xpColor; // оранжевый — заметный цвет тревожного таймера
+        respawnText.text = "Возрождение: 2:00";
+        respawnText.gameObject.SetActive(false); // показываем только когда герой мёртв
     }
 
     /// <summary>Создаёт одну полоску: тёмный фон + заполнение (Filled) + опциональный текст по центру.</summary>
