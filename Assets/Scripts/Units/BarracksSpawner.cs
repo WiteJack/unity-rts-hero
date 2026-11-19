@@ -146,6 +146,8 @@ public class BarracksSpawner : MonoBehaviour
 
         if (logWaves)
             Debug.Log($"<color=green>[ПОДКРЕПЛЕНИЕ]</color> Казарма {gameObject.name}: волна {waveNumber}, юнитов вышло: {totalSpawned}");
+        else if (totalSpawned == 0)
+            Debug.LogWarning($"[ПОДКРЕПЛЕНИЕ] Казарма {gameObject.name}: волна {waveNumber} вышла с 0 юнитов — проверь списки войск (point1/2/3Units) в инспекторе.");
     }
 
     private void SpawnPointUnits(List<SquadEntry> units, Transform rallyPoint, int waveNumber, ref int totalSpawned)
@@ -171,20 +173,35 @@ public class BarracksSpawner : MonoBehaviour
         Vector2 rnd = UnityEngine.Random.insideUnitCircle * spawnSpreadRadius;
         Vector3 desiredPos = transform.position + new Vector3(rnd.x, 0f, rnd.y);
 
-        NavMeshHit navHit;
-        if (NavMesh.SamplePosition(desiredPos, out navHit, 5f, NavMesh.AllAreas))
+        // ВАЖНО: юнит должен появиться НА NavMesh, иначе он просто стоит на месте
+        // (NavMeshAgent отказывается работать вне запечённой области).
+        bool onNavMesh = NavMesh.SamplePosition(desiredPos, out NavMeshHit navHit, 5f, NavMesh.AllAreas);
+        if (onNavMesh)
         {
             desiredPos = navHit.position;
+        }
+        else
+        {
+            Debug.LogWarning($"[КАЗАРМА] {gameObject.name}: в 5м от точки спавна НЕ найден NavMesh — юнит появится вне навмеша и стоять на месте. Запеки NavMesh вокруг казармы (Window > AI > Navigation > Bake).");
         }
 
         GameObject unit = Instantiate(prefab, desiredPos, Quaternion.identity);
         unit.layer = alliesLayer; // ВСЁ войско — на слое Allies (как в ТЗ)
+
+        // Если юнит всё-таки оказался вне NavMesh — принудительно переносим на запечённую область
+        NavMeshAgent unitAgent = unit.GetComponent<NavMeshAgent>();
+        if (unitAgent == null) unitAgent = unit.GetComponentInChildren<NavMeshAgent>();
+        if (unitAgent != null && onNavMesh && !unitAgent.isOnNavMesh)
+        {
+            unitAgent.Warp(navHit.position);
+        }
 
         // Марш к точке (аналог EnemyMarchToBase, только для союзников)
         AllyMarchToPoint marcher = unit.GetComponent<AllyMarchToPoint>();
         if (marcher == null) marcher = unit.AddComponent<AllyMarchToPoint>();
         marcher.rallyPoint = rallyPoint;
         marcher.stopDistance = stopDistance;
+        marcher.logDebug = logWaves; // диагностика марша идёт тем же тумблером, что и логи волн
     }
 
     private Transform GetPoint(int index)
