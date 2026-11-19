@@ -7,18 +7,18 @@ using UnityEngine.AI;
 /// Казарма союзников — аналог SpawnEnemy, но для альянса. Вешается на УЖЕ РАСПОЛОЖЕННУЮ
 /// казарму на сцене (на сам объект казармы).
 ///
-/// Правила (по ТЗ):
+/// Правила (по ТЗ, упрощённая версия без марша к точкам):
 /// - Волны как в SpawnEnemy: список волн, у каждой — ВРЕМЯ ОТ НАЧАЛА МАТЧА в секундах.
 ///   10 подкреплений = 10 волн = 10 моментов выхода (по таймеру матча).
-/// - У казармы ВСЕГДА ТРИ точки (пустышки-дети Ally_RallyPoint_1..3) — куда идут войска.
-///   Если точки не назначены, создаются автоматически; их можно двигать по сцене.
-/// - В КАЖДОЙ волне ВРУЧНУЮ прописывается, какие войска (префабы) и сколько юнитов
-///   пойдут на каждую из ТРЁХ точек (count = число юнитов).
+/// - В КАЖДОЙ волне ВРУЧНУЮ прописывается, какие войска (префабы) и сколько юнитов выйдет
+///   (count = число юнитов).
+/// - Юниты появляются вокруг казармы (разброс spawnSpreadRadius) и дальше живут своей жизнью
+///   (бой ведёт BattleAI). Точки марша и AllyMarchToPoint УБРАНЫ — союзники просто
+///   появляются вокруг здания.
 /// - Весь спавн — на слое Allies (7, номер зашит в проекте).
 ///
 /// Казарма — это UnitStats (+ BuildingDestruction): когда её уничтожили (HP <= 0 / isDead),
 /// волны подкреплений от ЭТОЙ казармы больше не выходят (у других казарм — свои спавнеры).
-/// Юнит спавнится вокруг казармы, идёт до своей точки (AllyMarchToPoint), бой марш не отменяет.
 /// </summary>
 public class BarracksSpawner : MonoBehaviour
 {
@@ -28,7 +28,7 @@ public class BarracksSpawner : MonoBehaviour
         [Tooltip("Префаб союзника (например, Allies_Soldier или Allies_Shooter на слое Allies)")]
         public GameObject unitPrefab;
 
-        [Tooltip("Сколько юнитов этого типа пойдёт на точку в этой волне")]
+        [Tooltip("Сколько юнитов этого типа выйдет в этой волне")]
         [Min(1)] public int count = 1;
     }
 
@@ -40,34 +40,21 @@ public class BarracksSpawner : MonoBehaviour
         [Tooltip("Время с начала матча в секундах, когда выйдет эта волна (60 = 1 мин, 120 = 2 мин...)")]
         public float spawnTimeSeconds = 60f;
 
-        [Tooltip("Войска для ТОЧКИ 1 (какие префабы и сколько юнитов)")]
-        public List<SquadEntry> point1Units = new List<SquadEntry>();
-
-        [Tooltip("Войска для ТОЧКИ 2")]
-        public List<SquadEntry> point2Units = new List<SquadEntry>();
-
-        [Tooltip("Войска для ТОЧКИ 3")]
-        public List<SquadEntry> point3Units = new List<SquadEntry>();
+        [Tooltip("Войска этой волны (какие префабы и сколько юнитов)")]
+        public List<SquadEntry> units = new List<SquadEntry>();
 
         [HideInInspector] public bool isSpawned = false;
     }
-
-    [Header("ТРИ точки казармы — куда идут войска (пустышки-дети, создаются авто)")]
-    [Tooltip("Точка 1 / 2 / 3. Если пусто — создастся ребёнок Ally_RallyPoint_N")]
-    public Transform[] rallyPoints = new Transform[3];
 
     [Header("Волны подкреплений (как в SpawnEnemy: время от начала матча)")]
     public List<WaveConfig> waves = new List<WaveConfig>(10);
 
     [Header("Спавн")]
-    [Tooltip("Разброс позиции появления вокруг казармы")]
+    [Tooltip("Радиус разброса появления юнитов вокруг казармы")]
     public float spawnSpreadRadius = 3f;
 
     [Tooltip("Номер слоя Allies (зашит в проекте — 7, не менять без рефакторинга)")]
     public int alliesLayer = 7;
-
-    [Tooltip("Дистанция, ближе которой юнит считает, что дошёл до точки")]
-    public float stopDistance = 2.5f;
 
     [Header("Прочее")]
     [Tooltip("Логировать каждую вышедшую волну в консоль")]
@@ -80,7 +67,6 @@ public class BarracksSpawner : MonoBehaviour
     void Reset()
     {
         InitializeDefaultWaves();
-        CreateRallyPoints();
     }
 
     void OnValidate()
@@ -97,9 +83,6 @@ public class BarracksSpawner : MonoBehaviour
 
     void Start()
     {
-        if (rallyPoints == null || rallyPoints.Length != 3) rallyPoints = new Transform[3];
-        AutoAssignMissingPoints();
-
         barracksStats = GetComponent<UnitStats>();
         if (barracksStats == null)
         {
@@ -135,40 +118,34 @@ public class BarracksSpawner : MonoBehaviour
         }
     }
 
-    /// <summary>Выпускает волну подкреплений: по списку юнитов на каждую из трёх точек.</summary>
+    /// <summary>Выпускает волну подкреплений вокруг казармы.</summary>
     private void SpawnWave(WaveConfig wave, int waveNumber)
     {
         int totalSpawned = 0;
 
-        SpawnPointUnits(wave.point1Units, GetPoint(0), waveNumber, ref totalSpawned);
-        SpawnPointUnits(wave.point2Units, GetPoint(1), waveNumber, ref totalSpawned);
-        SpawnPointUnits(wave.point3Units, GetPoint(2), waveNumber, ref totalSpawned);
+        if (wave.units != null)
+        {
+            foreach (SquadEntry entry in wave.units)
+            {
+                if (entry == null || entry.unitPrefab == null) continue;
+
+                // count = число юнитов (подкреплений)
+                for (int c = 0; c < entry.count; c++)
+                {
+                    SpawnOne(entry.unitPrefab);
+                    totalSpawned++;
+                }
+            }
+        }
 
         if (logWaves)
             Debug.Log($"<color=green>[ПОДКРЕПЛЕНИЕ]</color> Казарма {gameObject.name}: волна {waveNumber}, юнитов вышло: {totalSpawned}");
-        else if (totalSpawned == 0)
-            Debug.LogWarning($"[ПОДКРЕПЛЕНИЕ] Казарма {gameObject.name}: волна {waveNumber} вышла с 0 юнитов — проверь списки войск (point1/2/3Units) в инспекторе.");
+        else if (totalSpawned == 0 && waveNumber > 0)
+            Debug.LogWarning($"[ПОДКРЕПЛЕНИЕ] Казарма {gameObject.name}: волна {waveNumber} вышла с 0 юнитов — проверь список units в инспекторе.");
     }
 
-    private void SpawnPointUnits(List<SquadEntry> units, Transform rallyPoint, int waveNumber, ref int totalSpawned)
-    {
-        if (units == null || rallyPoint == null) return;
-
-        foreach (SquadEntry entry in units)
-        {
-            if (entry == null || entry.unitPrefab == null) continue;
-
-            // count = число юнитов
-            for (int c = 0; c < entry.count; c++)
-            {
-                SpawnOne(entry.unitPrefab, rallyPoint);
-                totalSpawned++;
-            }
-        }
-    }
-
-    /// <summary>Спавнит одного юнита вокруг казармы и отправляет его к точке.</summary>
-    private void SpawnOne(GameObject prefab, Transform rallyPoint)
+    /// <summary>Спавнит одного юнита вокруг казармы (обязательно на NavMesh).</summary>
+    private void SpawnOne(GameObject prefab)
     {
         Vector2 rnd = UnityEngine.Random.insideUnitCircle * spawnSpreadRadius;
         Vector3 desiredPos = transform.position + new Vector3(rnd.x, 0f, rnd.y);
@@ -182,7 +159,7 @@ public class BarracksSpawner : MonoBehaviour
         }
         else
         {
-            Debug.LogWarning($"[КАЗАРМА] {gameObject.name}: в 5м от точки спавна НЕ найден NavMesh — юнит появится вне навмеша и стоять на месте. Запеки NavMesh вокруг казармы (Window > AI > Navigation > Bake).");
+            Debug.LogWarning($"[КАЗАРМА] {gameObject.name}: в 5м от точки спавна НЕ найден NavMesh — юнит появится вне навмеша и будет стоять. Запеки NavMesh вокруг казармы (Window > AI > Navigation > Bake).");
         }
 
         GameObject unit = Instantiate(prefab, desiredPos, Quaternion.identity);
@@ -195,47 +172,6 @@ public class BarracksSpawner : MonoBehaviour
         {
             unitAgent.Warp(navHit.position);
         }
-
-        // Марш к точке (аналог EnemyMarchToBase, только для союзников)
-        AllyMarchToPoint marcher = unit.GetComponent<AllyMarchToPoint>();
-        if (marcher == null) marcher = unit.AddComponent<AllyMarchToPoint>();
-        marcher.rallyPoint = rallyPoint;
-        marcher.stopDistance = stopDistance;
-        marcher.logDebug = logWaves; // диагностика марша идёт тем же тумблером, что и логи волн
-    }
-
-    private Transform GetPoint(int index)
-    {
-        if (rallyPoints == null || rallyPoints.Length != 3) rallyPoints = new Transform[3];
-        if (rallyPoints[index] == null) AutoAssignMissingPoints();
-        return rallyPoints[index];
-    }
-
-    /// <summary>Точек всегда ровно ТРИ (по ТЗ): автосоздание пустышек-детей казармы.</summary>
-    private void AutoAssignMissingPoints()
-    {
-        for (int i = 0; i < 3; i++)
-        {
-            if (rallyPoints[i] != null) continue;
-
-            Transform found = transform.Find("Ally_RallyPoint_" + (i + 1));
-            if (found == null)
-            {
-                GameObject go = new GameObject("Ally_RallyPoint_" + (i + 1));
-                go.transform.SetParent(transform, false);
-                go.transform.localPosition = new Vector3((i - 1) * 5f, 0f, 5f);
-                found = go.transform;
-            }
-            rallyPoints[i] = found;
-        }
-    }
-
-    [ContextMenu("Создать/назначить 3 точки-ребёнка (Ally_RallyPoint_1..3)")]
-    public void CreateRallyPoints()
-    {
-        if (rallyPoints == null || rallyPoints.Length != 3) rallyPoints = new Transform[3];
-        AutoAssignMissingPoints();
-        Debug.Log("[Казарма] Точки созданы/назначены. Расставь пустышки Ally_RallyPoint_1..3 по сцене.");
     }
 
     [ContextMenu("Сбросить на 10 волн (каждую минуту, пустые списки войск)")]
@@ -251,19 +187,10 @@ public class BarracksSpawner : MonoBehaviour
         }
     }
 
-    // Визуализация трёх точек в редакторе — удобно настраивать
+    // Визуализация радиуса спавна вокруг казармы в редакторе — удобно настраивать
     void OnDrawGizmos()
     {
-        if (rallyPoints == null) return;
-        Gizmos.color = new Color(0.2f, 1f, 0.4f, 0.9f);
-        for (int i = 0; i < rallyPoints.Length && i < 3; i++)
-        {
-            Transform pt = rallyPoints[i];
-            if (pt != null)
-            {
-                Gizmos.DrawSphere(pt.position, 0.4f);
-                Gizmos.DrawLine(transform.position, pt.position);
-            }
-        }
+        Gizmos.color = new Color(0.2f, 1f, 0.4f, 0.35f);
+        Gizmos.DrawWireSphere(transform.position, spawnSpreadRadius);
     }
 }
