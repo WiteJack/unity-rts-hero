@@ -58,18 +58,6 @@ public class HeroRespawn : MonoBehaviour
 
         anim = GetComponentInChildren<Animator>(true);
 
-        // ВАЖНО: тело героя НЕ должно исчезать. CorpseDissolve растворяет и уничтожает труп,
-        // а вместе с ним умирает и этот скрипт — таймер замирает (завис на показанных секундах).
-        // Отключаем растворение на герое: тело лежит на месте до возрождения.
-        CorpseDissolve corpse = GetComponent<CorpseDissolve>();
-        if (corpse == null) corpse = GetComponentInChildren<CorpseDissolve>(true);
-        if (corpse != null)
-        {
-            corpse.enabled = false;
-            if (logEvents)
-                Debug.Log("[Возрождение] Тело героя не растворяется (CorpseDissolve отключён) — пролежит до возрождения.");
-        }
-
         // Точка спавна героя: GameSpawner.spawnPoint (та же, где герой появился в начале матча)
         GameSpawner spawner = FindAnyObjectByType<GameSpawner>();
         if (spawner != null && spawner.spawnPoint != null)

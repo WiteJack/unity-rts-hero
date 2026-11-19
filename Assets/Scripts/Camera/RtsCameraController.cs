@@ -27,6 +27,23 @@ public class RtsCameraController : MonoBehaviour
     [Header("Множитель ускорения (SHIFT)")]
     public float shiftMultiplier = 2f;
 
+    // АВАРИЙНЫЙ жёсткий зажим КАЖДЫЙ кадр (LateUpdate). Зажим в Update удерживает только
+    // собственное движение WASD/краёв экрана. Если камеру за границы отбросил кто-то другой
+    // (фокус спавнера в GameSpawner, любой сторонний контроллер героя, сбой кадра) —
+    // LateUpdate возвращает её в рамки карты в тот же кадр, до отрисовки.
+    void LateUpdate()
+    {
+        Vector3 p = transform.position;
+        float clampedX = Mathf.Clamp(p.x, minX, maxX);
+        float clampedZ = Mathf.Clamp(p.z, minZ, maxZ);
+        float clampedY = Mathf.Clamp(p.y, minHeight, maxHeight);
+
+        if (p.x != clampedX || p.z != clampedZ || p.y != clampedY)
+        {
+            transform.position = new Vector3(clampedX, clampedY, clampedZ);
+        }
+    }
+
     void Update()
     {
         if (Keyboard.current == null) return;
