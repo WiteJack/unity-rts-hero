@@ -27,6 +27,42 @@ public class RtsCameraController : MonoBehaviour
     [Header("Множитель ускорения (SHIFT)")]
     public float shiftMultiplier = 2f;
 
+    // АВАРИЙНЫЙ жёсткий зажим КАЖДЫЙ кадр (LateUpdate). Зажим в Update удерживает только
+    // собственное движение WASD/краёв экрана. Если камеру за границы отбросил кто-то другой
+    // (фокус спавнера в GameSpawner, любой сторонний контроллер героя, сбой кадра) —
+    // LateUpdate возвращает её в рамки карты в тот же кадр, до отрисовки.
+    void LateUpdate()
+    {
+        // риг зажимаем вместе с высотой; Camera.main (если камера ДОЧЕРНИЙ объект рига,
+        // как на типичной схеме CameraRig -> Main Camera) — тоже: телепорт двигает именно
+        // Camera.main, и без этого камера оставалась за картой до следующего WASD.
+        // Причина бага «после смерти + телепорт камера улетает за карту, хотя ограничения есть».
+        ClampToMap(transform, true);
+        var mainCam = Camera.main;
+        if (mainCam != null && mainCam.transform != transform)
+            ClampToMap(mainCam.transform, false);
+    }
+
+    /// <summary>Жёсткий зажим позиции в границы карты; public — можно дёрнуть после телепорта.</summary>
+    public void ClampToMap(Transform t, bool clampHeight)
+    {
+        Vector3 p = t.position;
+        // защита от NaN (битые телепорты/варпы превращают позицию в бессмыслицу,
+        // а Clamp(NaN) = NaN — зажим молча перестаёт работать)
+        if (float.IsNaN(p.x) || float.IsNaN(p.y) || float.IsNaN(p.z))
+        {
+            t.position = new Vector3((minX + maxX) * 0.5f, (minHeight + maxHeight) * 0.5f, (minZ + maxZ) * 0.5f);
+            return;
+        }
+        float clampedX = Mathf.Clamp(p.x, minX, maxX);
+        float clampedZ = Mathf.Clamp(p.z, minZ, maxZ);
+        float clampedY = clampHeight ? Mathf.Clamp(p.y, minHeight, maxHeight) : p.y;
+        if (p.x != clampedX || p.z != clampedZ || p.y != clampedY)
+        {
+            t.position = new Vector3(clampedX, clampedY, clampedZ);
+        }
+    }
+
     void Update()
     {
         if (Keyboard.current == null) return;
