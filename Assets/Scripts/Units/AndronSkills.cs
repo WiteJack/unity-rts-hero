@@ -127,7 +127,7 @@ public class AndronSkills : MonoBehaviour
         // ---- Отражение урона (Щит империи) ----
         UpdateReflect();
 
-        // ---- Горячие клавиши: Q/W — активные навыки, E/R/F — прокачка/атрибуты ----
+        // ---- Горячие клавиши: 1/2 — активные навыки, 5 — вложить очко атрибутов ----
         HandleHotkeys();
     }
 
@@ -397,11 +397,13 @@ public class AndronSkills : MonoBehaviour
 #if ENABLE_INPUT_SYSTEM
         var kb = UnityEngine.InputSystem.Keyboard.current;
         if (kb == null) return;
-        if (kb.qKey.wasPressedThisFrame) CastSkill(SkillId.Rage);
-        if (kb.wKey.wasPressedThisFrame) CastSkill(SkillId.ShieldBlast);
+        if (kb.digit1Key.wasPressedThisFrame) CastSkill(SkillId.Rage);
+        if (kb.digit2Key.wasPressedThisFrame) CastSkill(SkillId.ShieldBlast);
+        if (kb.digit5Key.wasPressedThisFrame) SpendAttributePoint();
 #else
-        if (Input.GetKeyDown(KeyCode.Q)) CastSkill(SkillId.Rage);
-        if (Input.GetKeyDown(KeyCode.W)) CastSkill(SkillId.ShieldBlast);
+        if (Input.GetKeyDown(KeyCode.Alpha1)) CastSkill(SkillId.Rage);
+        if (Input.GetKeyDown(KeyCode.Alpha2)) CastSkill(SkillId.ShieldBlast);
+        if (Input.GetKeyDown(KeyCode.Alpha5)) SpendAttributePoint();
 #endif
     }
 

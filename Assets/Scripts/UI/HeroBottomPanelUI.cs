@@ -172,11 +172,11 @@ public class HeroBottomPanelUI : MonoBehaviour
         // ---------- кнопки навыков справа (панель правит имена/клавиши) ----------
         var skillsData = new (string name, string hotkey, AndronSkills.SkillId id)[]
         {
-            ("Ярость короля",  "Q", AndronSkills.SkillId.Rage),
-            ("Взрыв щита",     "W", AndronSkills.SkillId.ShieldBlast),
-            ("Щит империи",    "E", AndronSkills.SkillId.EmpireShieldPassive),
-            ("Родословная",    "R", AndronSkills.SkillId.BloodlinePassive),
-            ("Атрибуты",       "F", AndronSkills.SkillId.Attributes),
+            ("Ярость короля",  "1", AndronSkills.SkillId.Rage),
+            ("Взрыв щита",     "2", AndronSkills.SkillId.ShieldBlast),
+            ("Щит империи",    "3", AndronSkills.SkillId.EmpireShieldPassive),
+            ("Родословная",    "4", AndronSkills.SkillId.BloodlinePassive),
+            ("Атрибуты",       "5", AndronSkills.SkillId.Attributes), // плюсик в конце
         };
 
         int skillCount = skillsData.Length;
@@ -407,8 +407,11 @@ public class HeroBottomPanelUI : MonoBehaviour
             btn.levelText.text = lvl + "/5";
             btn.levelText.color = lvl > 0 ? textColor : new Color(0.6f, 0.6f, 0.6f, 0.8f);
 
-            // "+": показываем только когда прокачка реально доступна
-            btn.plus.gameObject.SetActive(skills.CanUpgrade(btn.id));
+            // "+": виден у ЛЮБОГО навыка ниже 5 уровня; оранжевый = можно прокачать, серый = заблокирован уровнем героя
+            btn.plus.gameObject.SetActive(lvl < 5);
+            btn.plus.color = skills.CanUpgrade(btn.id)
+                ? upgradeColor
+                : new Color(0.35f, 0.35f, 0.35f, 0.9f);
 
             // перезарядка активных навыков
             if (btn.id == AndronSkills.SkillId.Rage || btn.id == AndronSkills.SkillId.ShieldBlast)
@@ -417,7 +420,7 @@ public class HeroBottomPanelUI : MonoBehaviour
                 float total = btn.id == AndronSkills.SkillId.Rage
                     ? skills.rageCooldown : skills.shieldBlastCooldown;
                 btn.cooldown.fillAmount = Mathf.Clamp01(cd / Mathf.Max(0.01f, total));
-                if (lvl <= 0) { btn.cooldown.fillAmount = 1f; btn.cooldownText.text = "не изучен"; }
+                if (lvl <= 0) { btn.cooldown.fillAmount = 1f; btn.cooldownText.text = "нужен ур. 5"; }
                 else if (btn.cooldown.fillAmount > 0.02f)
                     btn.cooldownText.text = Mathf.CeilToInt(cd).ToString();
                 else btn.cooldownText.text = "";
@@ -492,8 +495,17 @@ public class HeroBottomPanelUI : MonoBehaviour
     {
         if (skills == null) return;
         if (PlusClick.lastPlusClickFrame == Time.frameCount) return; // клик пришёл от "+" — игнорируем
-        if (id == AndronSkills.SkillId.Attributes) skills.SpendAttributePoint();
-        else skills.CastSkill(id);
+        if (id == AndronSkills.SkillId.Attributes)
+        {
+            if (skills.UnspentPoints <= 0)
+                Debug.Log("[НАВЫК] Нет нераспределённых очков — очки дают уровни героя (5-я кнопка, цифра 5).");
+            skills.SpendAttributePoint();
+        }
+        else
+        {
+            if (!skills.CastSkill(id))
+                Debug.Log($"[НАВЫК] {id}: активировать нельзя — либо навык не изучен (нужен уровень героя 5+ и зелёный «+» на кнопке), либо идёт перезарядка.");
+        }
     }
 
     public void OnPlusClicked(AndronSkills.SkillId id)
