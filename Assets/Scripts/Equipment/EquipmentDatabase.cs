@@ -46,6 +46,7 @@ public static class EquipmentDatabase
 
     // ==================== ПРЕДМЕТ ====================
 
+    [System.Serializable]
     public class EquipmentDef
     {
         public int id;

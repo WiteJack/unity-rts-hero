@@ -177,10 +177,10 @@ public class AndronSkills : MonoBehaviour
         {
             // запасной путь без EquipmentSystem: снимаем прошлую дельту и накладываем новую напрямую
             // (HeroStats как файл НЕ правим — используем его публичные поля)
-            float blood = bloodlineLevel <= 0 ? 0f : new[] { 5f, 10f, 20f, 35f, 50f }[bloodlineLevel - 1];
-            float str = blood + attrPoints[0];
+            float bloodFb = bloodlineLevel <= 0 ? 0f : new[] { 5f, 10f, 20f, 35f, 50f }[bloodlineLevel - 1];
+            float str = bloodFb + attrPoints[0];
             float vit = attrPoints[1];
-            float end = blood + attrPoints[2];
+            float end = bloodFb + attrPoints[2];
 
             stats.strength -= fbStr; stats.vitality -= fbVit; stats.endurance -= fbEnd;
             stats.strength += str;   stats.vitality += vit;   stats.endurance += end;
