@@ -31,8 +31,8 @@ using UnityEngine;
 ///
 /// Прокачка: по диздоку CanUpgrade = skillLevel < 5 И heroLevel >= skillLevel*5 (5 ур. героя — 1-й уровень скилла,
 /// 10 — второй, 15 — третий, 20 — четвёртый, 25 — пятый). "+"-кнопка в UI вызывает UpgradeSkill.
-/// ОБНОВЛЕНИЕ 22 (тестовый режим): гейт по уровню героя выключается полем gateSkillsByHeroLevel (по умолчанию ВЫКЛ) —
-/// навык можно качать КАЖДЫЙ уровень героя, как плюсик атрибутов. Для диздока верни галку в инспекторе.
+/// ОБНОВЛЕНИЕ 25: тестовый режим завершён — гейт по уровню героя снова ВКЛЮЧЁН по диздоку (по умолчанию ВКЛ):
+/// ур.5 → lvl1, ур.10 → lvl2, ур.15 → lvl3, ур.20 → lvl4, ур.25 → lvl5. Для тестов можно снять галку в инспекторе.
 /// </summary>
 public class AndronSkills : MonoBehaviour
 {
@@ -51,9 +51,9 @@ public class AndronSkills : MonoBehaviour
     [Header("Ярость короля: интервал между ударами, сек (по умолчанию 5 ударов ≈ 1 сек)")]
     public float rageStrikeInterval = 0.2f;
 
-    [Header("Гейт прокачки по уровню героя (по умолчанию ВЫКЛ — тест: навык качается каждый уровень)")]
-    [Tooltip("ВКЛ = по диздоку: ур.5 → lvl1, ур.10 → lvl2, 15 → 3, 20 → 4, 25 → 5. ВЫКЛ = каждый уровень")]
-    public bool gateSkillsByHeroLevel = false;
+    [Header("Гейт прокачки по уровню героя (ОБНОВЛЕНИЕ 25 — по диздоку, по умолчанию ВКЛ)")]
+    [Tooltip("ВКЛ = по диздоку: ур.5 → lvl1, ур.10 → lvl2, 15 → 3, 20 → 4, 25 → 5. ВЫКЛ = каждый уровень (тест)")]
+    public bool gateSkillsByHeroLevel = true;
 
     [Header("Отражение урона (суммарно с уникальным снаряжением)")]
     [Tooltip("Радиус поиска врага для возврата урона")]
@@ -96,12 +96,12 @@ public class AndronSkills : MonoBehaviour
     }
 
     /// <summary>Можно ли повысить навык на "+" (макс 5; по диздоку — ещё гейт уровнем героя,
-    /// но для теста он выключен полем gateSkillsByHeroLevel: навык качается каждый уровень).</summary>
+    /// с ОБНОВЛЕНИЯ 25 гейт снова ВКЛЮЧЁН по диздоку).</summary>
     public bool CanUpgrade(SkillId id)
     {
         int lvl = GetSkillLevel(id);
         if (id == SkillId.Attributes || lvl >= 5) return false;
-        if (!gateSkillsByHeroLevel) return true; // ТЕСТОВЫЙ РЕЖИМ: каждый уровень
+        if (!gateSkillsByHeroLevel) return true; // тестовый режим: каждый уровень (галка снята в инспекторе)
         int heroLevel = xp != null ? xp.level : 1;
         int allowed = heroLevel / 5; // ур.5 → 1, ур.10 → 2, 15 → 3, 20 → 4, 25 → 5
         return lvl < allowed;
@@ -129,7 +129,7 @@ public class AndronSkills : MonoBehaviour
         ApplyBloodline();
         // ОБНОВЛЕНИЕ 23: маркер версии кода — если этой строки НЕТ в консоли, то проект скомпилировался
         // со старой сборкой (ищи красные ошибки компиляции) или AndronSkills.cs не заменён.
-        Debug.Log($"[НАВЫК] AndronSkills ОБНОВЛЕНИЕ 23 запущен: гейт уровня героя gateSkillsByHeroLevel = {gateSkillsByHeroLevel} (false/ВЫКЛ = качать можно КАЖДЫЙ уровень героя, тестовый режим). Нераспределённых очков: {UnspentPoints}");
+        Debug.Log($"[НАВЫК] AndronSkills ОБНОВЛЕНИЕ 23 запущен: гейт уровня героя gateSkillsByHeroLevel = {gateSkillsByHeroLevel} (true/ВКЛ = по диздоку: ур.5→lvl1, 10→2, 15→3, 20→4, 25→5 (ОБНОВЛЕНИЕ 25)). Нераспределённых очков: {UnspentPoints}");
     }
 
     void Update()
