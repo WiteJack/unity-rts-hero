@@ -127,6 +127,9 @@ public class AndronSkills : MonoBehaviour
     {
         // применяем пассив "Родословная" (если уровень прокачан в инспекторе для тестов)
         ApplyBloodline();
+        // ОБНОВЛЕНИЕ 23: маркер версии кода — если этой строки НЕТ в консоли, то проект скомпилировался
+        // со старой сборкой (ищи красные ошибки компиляции) или AndronSkills.cs не заменён.
+        Debug.Log($"[НАВЫК] AndronSkills ОБНОВЛЕНИЕ 23 запущен: гейт уровня героя gateSkillsByHeroLevel = {gateSkillsByHeroLevel} (false/ВЫКЛ = качать можно КАЖДЫЙ уровень героя, тестовый режим). Нераспределённых очков: {UnspentPoints}");
     }
 
     void Update()
@@ -145,7 +148,24 @@ public class AndronSkills : MonoBehaviour
     /// <summary>Поднять навык на 1 (вызывает "+"-кнопка в UI). Возвращает успех.</summary>
     public bool UpgradeSkill(SkillId id)
     {
-        if (!CanUpgrade(id)) return false;
+        // ОБНОВЛЕНИЕ 23: отказ теперь ВСЕГДА пишет точную причину в консоль (диагностика "не даёт качать").
+        int lvlCheck = GetSkillLevel(id);
+        if (id == SkillId.Attributes) return false;
+        if (lvlCheck >= 5)
+        {
+            if (logSkills) Debug.Log($"[НАВЫК] {id}: уже МАКСИМУМ (5/5) — выше нельзя.");
+            return false;
+        }
+        if (gateSkillsByHeroLevel)
+        {
+            int heroLevel = xp != null ? xp.level : 1;
+            int allowed = heroLevel / 5;
+            if (lvlCheck >= allowed)
+            {
+                Debug.Log($"[НАВЫК] {id}: ЗАБЛОКИРОВАНО гейтом уровня героя (gateSkillsByHeroLevel = ВКЛ): герой ур. {heroLevel} разрешает только {allowed} ур. навыка, а навык уже {lvlCheck}. ТЕСТОВЫЙ РЕЖИМ = сними галочку gateSkillsByHeroLevel у AndronSkills в инспекторе.");
+                return false;
+            }
+        }
         switch (id)
         {
             case SkillId.Rage: rageLevel++; break;

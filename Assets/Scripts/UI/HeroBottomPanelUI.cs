@@ -454,7 +454,7 @@ public class HeroBottomPanelUI : MonoBehaviour
         pRect.anchorMin = new Vector2(1f, 1f); pRect.anchorMax = new Vector2(1f, 1f);
         pRect.pivot = new Vector2(1f, 1f);
         pRect.anchoredPosition = new Vector2(-2f, -2f);
-        pRect.sizeDelta = new Vector2(16f, 16f);
+        pRect.sizeDelta = new Vector2(22f, 22f); // ОБНОВЛЕНИЕ 23: было 16 — промахивались
         var plusClick = plusGO.AddComponent<PlusClick>();
         plusClick.skillId = id;
         var plusText = CreateLabel(plusGO.transform, "PlusText", 14);
@@ -700,7 +700,13 @@ public class HeroBottomPanelUI : MonoBehaviour
         int lvl = skills.GetSkillLevel(id);
         if (lvl <= 0)
         {
-            Debug.Log($"[НАВЫК] {id}: НЕ изучен. Учи через ОРАНЖЕВЫЙ «+» на кнопке (для теста учить можно с ЛЮБОГО уровня; по диздоку — с 5-го), после этого кнопка будет активировать навык.");
+            // ОБНОВЛЕНИЕ 23: клик по самой кнопке ТОЖЕ учит навык — раньше учил только крошечный «+»,
+            // из-за этого казалось, что "не даёт качать скиллы". Теперь любой клик по невыученной кнопке = выучить.
+            Debug.Log($"[НАВЫК] {id}: НЕ изучен — вживляю кликом по кнопке (для теста учить можно с ЛЮБОГО уровня; по диздоку — с 5-го).");
+            if (skills.UpgradeSkill(id))
+                Debug.Log($"[НАВЫК] {id}: ВЫУЧЕН (ур. 1/5). Теперь кнопка кастует навык.");
+            else
+                Debug.Log($"[НАВЫК] {id}: выучить не удалось — смотри причину выше/ниже в логе [НАВЫК].");
             return;
         }
         if (!skills.CastSkill(id))
@@ -715,8 +721,10 @@ public class HeroBottomPanelUI : MonoBehaviour
             Debug.LogError("[НАВЫК] На герое НЕ найден компонент AndronSkills — «+» работать не может!");
             return;
         }
-        if (!skills.UpgradeSkill(id))
-            Debug.Log($"[НАВЫК] {id}: прокачка недоступна (максимум 5; сегодня режим теста — прокачка разрешена каждый уровень героя)");
+        if (skills.UpgradeSkill(id))
+            Debug.Log($"[НАВЫК] {id}: прокачен до {skills.GetSkillLevel(id)}/5 (гейт уровня героя: {(skills.gateSkillsByHeroLevel ? "ВКЛ" : "ВЫКЛ — тестовый режим, можно КАЖДЫЙ уровень")})");
+        else
+            Debug.Log($"[НАВЫК] {id}: прокачка недоступна (максимум 5; сегодня режим теста — прокачка разрешена каждый уровень героя). Точная причина — в логе выше.");
     }
 
     // ==================== EVENTSYSTEM ====================

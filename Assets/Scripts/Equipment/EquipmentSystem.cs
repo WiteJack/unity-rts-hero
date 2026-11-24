@@ -33,6 +33,9 @@ public class EquipmentSystem : MonoBehaviour
     // Накопленная дельта бонусов от НАДЕТЫХ предметов (обычные слоты + уники Андрона)
     private float dStrength, dVitality, dEndurance, dAgility, dWisdom, dWillpower;
     private float dBonusHP, dBonusMana, dMoveSpeed;
+    // ОБНОВЛЕНИЕ 23: сумма "%" скорости передвижения от надетых предметов (moveSpeedPercent),
+    // финал = (база + плоские бонусы) * (1 + процент/100).
+    private float dBonusMovePct;
 
     /// <summary>Надетые предметы для UI (6 обычных слотов).</summary>
     public EquipmentDatabase.EquipmentDef[] Slots { get { return slots; } }
@@ -141,6 +144,7 @@ public class EquipmentSystem : MonoBehaviour
         dStrength += def.strength; dVitality += def.vitality; dEndurance += def.endurance;
         dAgility += def.agility; dWisdom += def.wisdom; dWillpower += def.willpower;
         dBonusHP += def.bonusHP; dBonusMana += def.bonusMana; dMoveSpeed += def.moveSpeedBonus;
+        dBonusMovePct += def.moveSpeedPercent; // ОБНОВЛЕНИЕ 23: % скорости передвижения
         AddDelta();
     }
 
@@ -149,6 +153,7 @@ public class EquipmentSystem : MonoBehaviour
         dStrength -= def.strength; dVitality -= def.vitality; dEndurance -= def.endurance;
         dAgility -= def.agility; dWisdom -= def.wisdom; dWillpower -= def.willpower;
         dBonusHP -= def.bonusHP; dBonusMana -= def.bonusMana; dMoveSpeed -= def.moveSpeedBonus;
+        dBonusMovePct -= def.moveSpeedPercent; // ОБНОВЛЕНИЕ 23: % скорости передвижения
         AddDelta();
     }
 
@@ -166,6 +171,7 @@ public class EquipmentSystem : MonoBehaviour
     {
         dStrength = dVitality = dEndurance = dAgility = dWisdom = dWillpower = 0f;
         dBonusHP = dBonusMana = dMoveSpeed = 0f;
+        dBonusMovePct = 0f;
     }
 
     /// <summary>Применить накопленную дельту к HeroStats и агенту (HeroStats не правим — используем публичные поля).</summary>
@@ -193,7 +199,8 @@ public class EquipmentSystem : MonoBehaviour
         if (heroAgent != null)
         {
             if (baseAgentSpeed < 0f) baseAgentSpeed = heroAgent.speed;
-            heroAgent.speed = baseAgentSpeed + dMoveSpeed + skillsMoveSpeed;
+            // ОБНОВЛЕНИЕ 23: (база + плоские бонусы) * (1 + сумма % скорости передвижения)
+            heroAgent.speed = (baseAgentSpeed + dMoveSpeed + skillsMoveSpeed) * (1f + dBonusMovePct / 100f);
         }
 
         // макс HP изменился — сводим с ума отражение урона не даём (AndronSkills считает
