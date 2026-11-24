@@ -177,12 +177,12 @@ public class EquipmentSystem : MonoBehaviour
 
         // атрибуты: чистим след прошлых апплайтов через базу = текущее - дельта. Проще:
         // держим исходные значения, захваченные при Awake, и выставляем базу + дельта каждый раз.
-        heroStats.strength = captured.strength + dStrength + skillsStrength;
-        heroStats.vitality = captured.vitality + dVitality + skillsVitality;
-        heroStats.endurance = captured.endurance + dEndurance + skillsEndurance;
-        heroStats.agility = captured.agility + dAgility + skillsAgility;
-        heroStats.wisdom = captured.wisdom + dWisdom + skillsWisdom;
-        heroStats.willpower = captured.willpower + dWillpower + skillsWillpower;
+        heroStats.strength = captured.strength + dStrength + skillsStrength + extraStrength;
+        heroStats.vitality = captured.vitality + dVitality + skillsVitality + extraVitality;
+        heroStats.endurance = captured.endurance + dEndurance + skillsEndurance + extraEndurance;
+        heroStats.agility = captured.agility + dAgility + skillsAgility + extraAgility;
+        heroStats.wisdom = captured.wisdom + dWisdom + skillsWisdom + extraWisdom;
+        heroStats.willpower = captured.willpower + dWillpower + skillsWillpower + extraWillpower;
 
         heroStats.CalculateStats();
         heroStats.maxHP += dBonusHP;
@@ -215,6 +215,10 @@ public class EquipmentSystem : MonoBehaviour
     // но складываются сюда, чтобы итог героя всегда = база + снаряжение + навыки (никто не затирает чужие бонусы).
     private float skillsStrength, skillsVitality, skillsEndurance, skillsAgility, skillsWisdom, skillsWillpower, skillsMoveSpeed;
 
+    // Дельта случайных атрибутов за уровни (HeroLevelAttributeRoller) — отдельный канал,
+    // чтобы не пересекаться с бонусами навыков (SetSkillBonuses) и униками.
+    private float extraStrength, extraVitality, extraEndurance, extraAgility, extraWisdom, extraWillpower;
+
     void Start()
     {
         if (heroStats == null)
@@ -246,6 +250,15 @@ public class EquipmentSystem : MonoBehaviour
     public void SetSkillMoveSpeed(float moveSpeed)
     {
         skillsMoveSpeed = moveSpeed;
+        AddDelta();
+    }
+
+    /// <summary>Дельта случайных атрибутов за уровни (вызывает HeroLevelAttributeRoller).
+    /// Отдельный канал: суммируется со снаряжением, навыками и униками и НЕ затирается их пересчётами.</summary>
+    public void SetExtraBonuses(float strength, float vitality, float endurance, float agility, float wisdom, float willpower)
+    {
+        extraStrength = strength; extraVitality = vitality; extraEndurance = endurance;
+        extraAgility = agility; extraWisdom = wisdom; extraWillpower = willpower;
         AddDelta();
     }
 

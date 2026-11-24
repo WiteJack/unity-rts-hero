@@ -29,8 +29,10 @@ using UnityEngine;
 ///    (HeroExperience.unspentPoints). Клик — тратит 1 очко и поднимает ВСЕ 6 атрибутов
 ///    на +1 одновременно (по уточнению: не по одному по кругу, а всем сразу).
 ///
-/// Прокачка: CanUpgrade = skillLevel < 5 И heroLevel >= skillLevel*5 (5 ур. героя — 1-й уровень скилла,
+/// Прокачка: по диздоку CanUpgrade = skillLevel < 5 И heroLevel >= skillLevel*5 (5 ур. героя — 1-й уровень скилла,
 /// 10 — второй, 15 — третий, 20 — четвёртый, 25 — пятый). "+"-кнопка в UI вызывает UpgradeSkill.
+/// ОБНОВЛЕНИЕ 22 (тестовый режим): гейт по уровню героя выключается полем gateSkillsByHeroLevel (по умолчанию ВЫКЛ) —
+/// навык можно качать КАЖДЫЙ уровень героя, как плюсик атрибутов. Для диздока верни галку в инспекторе.
 /// </summary>
 public class AndronSkills : MonoBehaviour
 {
@@ -48,6 +50,10 @@ public class AndronSkills : MonoBehaviour
 
     [Header("Ярость короля: интервал между ударами, сек (по умолчанию 5 ударов ≈ 1 сек)")]
     public float rageStrikeInterval = 0.2f;
+
+    [Header("Гейт прокачки по уровню героя (по умолчанию ВЫКЛ — тест: навык качается каждый уровень)")]
+    [Tooltip("ВКЛ = по диздоку: ур.5 → lvl1, ур.10 → lvl2, 15 → 3, 20 → 4, 25 → 5. ВЫКЛ = каждый уровень")]
+    public bool gateSkillsByHeroLevel = false;
 
     [Header("Отражение урона (суммарно с уникальным снаряжением)")]
     [Tooltip("Радиус поиска врага для возврата урона")]
@@ -89,13 +95,16 @@ public class AndronSkills : MonoBehaviour
         }
     }
 
-    /// <summary>Можно ли повысить навык на "+" (макс 5; новый уровень открывается каждые 5 уровней героя).</summary>
+    /// <summary>Можно ли повысить навык на "+" (макс 5; по диздоку — ещё гейт уровнем героя,
+    /// но для теста он выключен полем gateSkillsByHeroLevel: навык качается каждый уровень).</summary>
     public bool CanUpgrade(SkillId id)
     {
         int lvl = GetSkillLevel(id);
+        if (id == SkillId.Attributes || lvl >= 5) return false;
+        if (!gateSkillsByHeroLevel) return true; // ТЕСТОВЫЙ РЕЖИМ: каждый уровень
         int heroLevel = xp != null ? xp.level : 1;
         int allowed = heroLevel / 5; // ур.5 → 1, ур.10 → 2, 15 → 3, 20 → 4, 25 → 5
-        return id != SkillId.Attributes && lvl < 5 && lvl < allowed;
+        return lvl < allowed;
     }
 
     /// <summary>Сколько нераспределённых очков (для UI).</summary>
