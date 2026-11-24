@@ -174,6 +174,9 @@ public class HeroBottomPanelUI : MonoBehaviour
             return;
         }
 
+        // ОБНОВЛЕНИЕ 24: окно описания (тултип) — одно поверх всего HUD, создаётся кодом
+        HeroTooltipUI.Ensure(canvas);
+
         // ---------- корень по низу экрана ----------
         var rootGO = new GameObject("HeroBottomPanel_Root", typeof(RectTransform));
         var root = (RectTransform)rootGO.transform;
@@ -393,6 +396,12 @@ public class HeroBottomPanelUI : MonoBehaviour
         var click = slotGO.AddComponent<SlotClick>();
         click.slotIndex = index;
         click.owner = this;
+
+        // ОБНОВЛЕНИЕ 24: тултип — наведение 0.2 сек показывает описание, уход курсора закрывает
+        var hover = slotGO.AddComponent<TooltipHover>();
+        int idx = index;
+        hover.TitleFn = () => SlotTooltipTitle(idx);
+        hover.BodyFn = () => SlotTooltipBody(idx);
     }
 
     private SkillButton CreateSkillButton(RectTransform root, int index,
@@ -487,6 +496,12 @@ public class HeroBottomPanelUI : MonoBehaviour
         var click = btnGO.AddComponent<SkillButtonClick>();
         click.skillId = id;
         click.owner = this;
+
+        // ОБНОВЛЕНИЕ 24: тултип — наведение 0.2 сек показывает описание, уход курсора закрывает
+        var hover = btnGO.AddComponent<TooltipHover>();
+        var skillId = id;
+        hover.TitleFn = () => SkillTooltipTitle(skillId);
+        hover.BodyFn = () => SkillTooltipBody(skillId);
 
         return btn;
     }
@@ -698,10 +713,26 @@ public class HeroBottomPanelUI : MonoBehaviour
         }
 
         int lvl = skills.GetSkillLevel(id);
+
+        // ОБНОВЛЕНИЕ 24: ПРИОРИТЕТ ПО ЗАПРОСУ ВЛАДЕЛЬЦА:
+        // «если есть очко способностей — качаю уровень навыка, если нету очков — использую навык».
+        // Раньше клик по кнопке выученного навыка уходил в каст, и прокачать с кнопки было нельзя.
+        if (lvl > 0 && lvl < 5 && skills.UnspentPoints > 0)
+        {
+            int before = lvl;
+            if (skills.UpgradeSkill(id))
+            {
+                Debug.Log($"[НАВЫК] {id}: прокачан до {skills.GetSkillLevel(id)}/5 кликом по кнопке (было {before}; очков осталось: {skills.UnspentPoints}).");
+                return;
+            }
+            Debug.Log($"[НАВЫК] {id}: прокачать не удалось — точная причина в логе [НАВЫК] выше.");
+            return; // даже при отказе НЕ кастуем — игрок явно хотел прокачку (есть очки)
+        }
+
         if (lvl <= 0)
         {
-            // ОБНОВЛЕНИЕ 23: клик по самой кнопке ТОЖЕ учит навык — раньше учил только крошечный «+»,
-            // из-за этого казалось, что "не даёт качать скиллы". Теперь любой клик по невыученной кнопке = выучить.
+            // ОБНОВЛЕНИЕ 23/24: невыученный навык учится кликом по самой кнопке (раньше учил только крошечный «+»).
+            // Если есть очки — приоритет выше уже сработал; сюда попадаем в тестовом режиме без очков (учение бесплатное).
             Debug.Log($"[НАВЫК] {id}: НЕ изучен — вживляю кликом по кнопке (для теста учить можно с ЛЮБОГО уровня; по диздоку — с 5-го).");
             if (skills.UpgradeSkill(id))
                 Debug.Log($"[НАВЫК] {id}: ВЫУЧЕН (ур. 1/5). Теперь кнопка кастует навык.");
@@ -725,6 +756,159 @@ public class HeroBottomPanelUI : MonoBehaviour
             Debug.Log($"[НАВЫК] {id}: прокачен до {skills.GetSkillLevel(id)}/5 (гейт уровня героя: {(skills.gateSkillsByHeroLevel ? "ВКЛ" : "ВЫКЛ — тестовый режим, можно КАЖДЫЙ уровень")})");
         else
             Debug.Log($"[НАВЫК] {id}: прокачка недоступна (максимум 5; сегодня режим теста — прокачка разрешена каждый уровень героя). Точная причина — в логе выше.");
+    }
+
+    // ==================== ОБНОВЛЕНИЕ 24: КОНТЕНТ ТУЛТИПОВ ====================
+    // Содержимое сверено с диздоком (герой Андрон) и КОДОМ: цифры собираются на месте → всегда живые и честные.
+
+    public string SkillTooltipTitle(AndronSkills.SkillId id)
+    {
+        if (skills == null) return "Навык";
+        if (id == AndronSkills.SkillId.Attributes) return "АТРИБУТЫ (очков: " + skills.UnspentPoints + ")";
+        int lvl = skills.GetSkillLevel(id);
+        string kind = (id == AndronSkills.SkillId.Rage || id == AndronSkills.SkillId.ShieldBlast) ? "активный" : "пассивный";
+        return SkillName(id) + " — ур. " + lvl + "/5 (" + kind + ")";
+    }
+
+    public string SkillTooltipBody(AndronSkills.SkillId id)
+    {
+        if (skills == null) return "На герое нет компонента AndronSkills.";
+        int lvl = skills.GetSkillLevel(id);
+        float str = hero != null ? hero.strength : 0f;
+
+        if (id == AndronSkills.SkillId.Attributes)
+        {
+            int p = skills.UnspentPoints;
+            return "Нераспределённых очков: " + p + "\n" +
+                   "Клик по кнопке или «+»: ВСЕ 6 атрибутов +1.\n\n" +
+                   "Формулы: 1 Сила = 5 атаки; 1 Живучесть = 25 HP; 1 Выносливость = 0.5 HP/сек и 0.1 защиты; " +
+                   "1 Ловкость = 0.1 ск. атаки (после капа 4.0 — идёт в шанс крита); 1 Мудрость = 15 магии; " +
+                   "1 Сила воли = 0.5 маны/сек и 0.1 ск. атаки.\n" +
+                   "Очки дают уровни героя (и мета-прокачка в будущем).";
+        }
+
+        string learn = lvl <= 0
+            ? "\n\n⚠ НЕ ИЗУЧЕН — клик по кнопке или оранжевому «+» выучит (тестовый режим: учение с любого уровня; по диздоку — с 5-го).\n"
+            : "\n\nКлик по кнопке: есть очки — прокачка, нет очков — использование.\n";
+
+        switch (id)
+        {
+            case AndronSkills.SkillId.Rage:
+            {
+                if (lvl <= 0)
+                    return "Активный, горячая клавиша 1. Перезарядка " + skills.rageCooldown + " c.\n" +
+                           "Несколько ударов мечом, каждый — замах анимацией (интервал " + skills.rageStrikeInterval + " c).\n" +
+                           "Каждый удар: 30 + сила×{1 / 1.5 / 2 / 2.5 / 3} на уровнях 1–5, волна 90° перед героем.\n" +
+                           "Каждая волна ДАЛЬШЕ: +50% × номер удара к дальности атаки (+50%…+250%)." + learn;
+                float mult = 0.5f + 0.5f * lvl;
+                float dmg = 30f + mult * str;
+                float range = heroAI != null ? heroAI.attackRange : 0f;
+                return "Активный, горячая клавиша 1. Перезарядка " + skills.rageCooldown + " c.\n" +
+                       "Ударов сейчас: " + lvl + " (интервал " + skills.rageStrikeInterval + " c, замах анимацией).\n" +
+                       "Урон одного удара: 30 + сила×" + mult.ToString("0.##") + " = " + dmg.ToString("0") + " (сила сейчас " + str.ToString("0") + ").\n" +
+                       "Каждый удар — волна 90° перед героем, каждая волна дальше:\n" +
+                       "волна N = дальность×(1 + 0.5×N): " + (range * 1.5f).ToString("0.0") + " … " + (range * (1f + 0.5f * lvl)).ToString("0.0") + " м\n" +
+                       "(дальность атаки " + range.ToString("0.0") + " м; по диздоку: +50%…+250%)." + learn;
+            }
+            case AndronSkills.SkillId.ShieldBlast:
+            {
+                float[] sM = { 1f, 1.5f, 1.5f, 2f, 2f };
+                float[] eM = { 1f, 1f, 1.5f, 1.5f, 2f };
+                float[] rM = { 7f, 9f, 11f, 13f, 16f };
+                int i = Mathf.Clamp(lvl, 1, 5) - 1;
+                float range = heroAI != null ? heroAI.attackRange : 0f;
+                string statsLine = lvl <= 0
+                    ? "Урон: 50 + сила×{1/1.5/1.5/2/2} + выносливость×{1/1/1.5/1.5/2} на уровнях 1–5.\n"
+                    : "Урон сейчас: 50 + сила×" + sM[i].ToString("0.#") + " + выносливость×" + eM[i].ToString("0.#") +
+                      " = " + (50f + sM[i] * str + eM[i] * (hero != null ? hero.endurance : 0f)).ToString("0") + " (сила " + str.ToString("0") + ", вын. " + (hero != null ? hero.endurance : 0f).ToString("0") + ").\n";
+                return "Активный, горячая клавиша 2. Перезарядка " + skills.shieldBlastCooldown + " c (1 мин 20 с).\n" +
+                       statsLine +
+                       "Радиус волны: +{(600,800,1000,1200,1500)}% к дальности атаки → сейчас " +
+                       (range * rM[i]).ToString("0.0") + " м (дальность " + range.ToString("0.0") + " м).\n" +
+                       "Бьёт ПРОТИВНИКОВ и НЕЙТРАЛОВ вокруг героя; противнику +20% общего урона (диздок)." + learn;
+            }
+            case AndronSkills.SkillId.EmpireShieldPassive:
+            {
+                return "Пассивный, кнопка 3 — «Щит империи».\n" +
+                       "Отражает полученный урон обратно в противников и нейтралов:\n" +
+                       "уровни 1–5 дают 10 / 20 / 30 / 40 / 50% отражения.\n" +
+                       "Сейчас отражается: " + skills.TotalReflectPercent.ToString("0") + "%\n" +
+                       "(включая +1%/мета-уровень от уникального шмота)." + learn;
+            }
+            case AndronSkills.SkillId.BloodlinePassive:
+            {
+                float[] b = { 5f, 10f, 20f, 35f, 50f };
+                string now = lvl <= 0 ? "" : " Сейчас: +" + b[Mathf.Clamp(lvl,1,5)-1].ToString("0") + " сила и +" + b[Mathf.Clamp(lvl,1,5)-1].ToString("0") + " выносливость.";
+                return "Пассивный, кнопка 4 — «Родословная».\n" +
+                       "Повышает СИЛУ и ВЫНОСЛИВОСТЬ: 5 / 10 / 20 / 35 / 50 на уровнях 1–5." + now + learn;
+            }
+            default:
+                return "Описание недоступно.";
+        }
+    }
+
+    private static string SkillName(AndronSkills.SkillId id)
+    {
+        switch (id)
+        {
+            case AndronSkills.SkillId.Rage: return "Ярость короля";
+            case AndronSkills.SkillId.ShieldBlast: return "Взрыв щита";
+            case AndronSkills.SkillId.EmpireShieldPassive: return "Щит империи";
+            case AndronSkills.SkillId.BloodlinePassive: return "Родословная";
+            default: return "Атрибуты";
+        }
+    }
+
+    /// <summary>Обычные слоты 0–5: показать надетый предмет или «пустой слот».</summary>
+    public string SlotTooltipTitle(int index)
+    {
+        if (equipment == null || index < 0 || index >= equipment.Slots.Length) return "Слот";
+        var def = equipment.Slots[index];
+        return def != null ? def.displayName + "  (тир " + (int)def.tier + ")" : "Слот " + (index + 1) + " — пустой";
+    }
+
+    public string SlotTooltipBody(int index)
+    {
+        if (equipment == null) return "На герое нет EquipmentSystem.";
+        if (index >= 6) return UniquesTooltipBody(index == 6);
+        var def = index >= 0 && index < equipment.Slots.Length ? equipment.Slots[index] : null;
+        if (def == null)
+            return "Пустой слот обычного снаряжения.\n" +
+                   "Подбери сундук с поля боя — цвет полоски снизу = тир предмета:\n" +
+                   "Т1 дерево, Т2 жёлтый, Т3 оранжевый, Т4 красный.\n\n" +
+                   "ЛКМ по слоту с предметом — снять (предмет упадёт рядом сундучком).";
+        string t = def.BonusesText();
+        return def.displayName + " (тир " + (int)def.tier + ")\n\n" + (string.IsNullOrEmpty(t) ? "Нет статов." : t) +
+               "\n\nЛКМ по слоту — снять предмет.";
+    }
+
+    /// <summary>Уники Андрона: слот 6 = арт. «М» (Благословенный меч), слот 7 = шмот «Щ» (Щит империи).</summary>
+    public string UniquesTooltipBody(bool isArtifact)
+    {
+        if (uniques == null) return "На герое нет AndronUniqueEquipment.";
+        if (isArtifact)
+        {
+            if (!uniques.ArtifactUnlocked)
+                return "УНИКАЛЬНЫЙ АРТЕФАКТ — «Благословенный меч»\n\n" +
+                       "Слот откроется на 10 мета-уровне (сейчас мето-ур. " + uniques.metaLevel + ").\n\n" +
+                       "Что даст: +5 урона по ПРОТИВНИКАМ (не нейтралам) на 1-м уровне " +
+                       "и +2 за каждый следующий уровень метовой прокачки;\n" +
+                       "+25 HP на 1-м уровне и +10 за каждый следующий.";
+            int lvl = uniques.UniqueArtifactLevel;
+            return "УНИКАЛЬНЫЙ АРТЕФАКТ — «Благословенный меч», ур. " + lvl + " (мето-ур. " + uniques.metaLevel + ")\n\n" +
+                   "Урон по противникам (не нейтралам): +" + uniques.SwordBonusDamage.ToString("0") +
+                   " (5 на ур.1, +2 за каждый уровень).\n" +
+                   "Здоровье: +" + uniques.SwordBonusHP.ToString("0") +
+                   " HP (25 на ур.1, +10 за каждый уровень).\n\n" +
+                   "Мета-прокачка пока заглушка: поменяй metaLevel в инспекторе.";
+        }
+        int ul = uniques.UniqueEquipLevel;
+        return "УНИКАЛЬНОЕ СНАРЯЖЕНИЕ — «Щит империи»" + (ul > 0 ? ", ур. " + ul : "") + " (мето-ур. " + uniques.metaLevel + ")\n\n" +
+               "+5 к защите" + (ul > 0 ? "" : " (когда уровень открыт)") + ".\n" +
+               "Если атакует ПРОТИВНИК — ещё +5 к защите (не на нейтралов, заготовка).\n" +
+               "Отражение урона: 10% на ур.1, +1% за каждый уровень → сейчас от уника " +
+               uniques.ShieldReflectPercent.ToString("0") + "%\n" +
+               "Суммарно с пассивкой: " + (skills != null ? skills.TotalReflectPercent.ToString("0") : "0") + "%."
     }
 
     // ==================== EVENTSYSTEM ====================
