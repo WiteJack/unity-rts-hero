@@ -3,7 +3,9 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 
 /// <summary>
-/// НИЖНЯЯ ПАНЕЛЬ ИНТЕРФЕЙСА (раскладка по мокапу ui1: навыки СЛЕВА, инфо в ЦЕНТРЕ, снаряжение СПРАВА).
+/// НИЖНЯЯ ПАНЕЛЬ ИНТЕРФЕЙСА (Обновление 20): единый КОНТЕЙНЕР в нижней панели —
+/// скиллы → атрибуты → уникальный артефакт → уникальный шмот → обычный шмот (слева направо);
+/// ХАРАКТЕРИСТИКИ — отдельный бар слева снизу.
 /// Вешается на ЛЮБОЙ объект (проще всего на Main Camera, как HeroStatsBarsUI).
 ///
 /// СЛЕВА внизу — КНОПКИ НАВЫКОВ АНДРОНА (5 штук, синие, идут 1 2 3 4 5 слева направо):
@@ -13,16 +15,13 @@ using UnityEngine.EventSystems;
 ///   - подсказка «жми +» на неизученном навыке (когда его уже можно учить),
 ///   - оранжевый "+" когда навык можно прокачать (клик по "+" изучает следующий уровень).
 ///
-/// В ЦЕНТРЕ над полосками HP/маны — ЖИВЫЕ ЦИФРЫ в двух колонках:
-///   - АТРИБУТЫ: Сила, Живучесть, Выносливость, Ловкость, Мудрость, Сила воли —
-///     читаются прямо из HeroStats ПОСЛЕ всех дельт (шмот + «+»-очки + уники), обновляются 5 раз/сек;
-///   - ХАРАКТЕРИСТИКИ: те же 9 строк, что были в HeroStatsPanel.
+///   - АТРИБУТЫ (в контейнере после скиллов): Сила, Живучесть, Выносливость, Ловкость,
+///     Мудрость, Сила воли — 6 живых строк, читаются прямо из HeroStats ПОСЛЕ всех дельт
+///     (шмот + «+»-очки + уники), обновляются 5 раз/сек;
+///   - ХАРАКТЕРИСТИКИ: 9 живых строк вынесены в ОТДЕЛЬНЫЙ БАР слева снизу (HeroCharPanel_Root), 5 раз/сек;
+///   - порядок слотов шмота: уникальный артефакт «М» → уникальное снаряжение «Щ» → 6 обычных;
 ///   ВАЖНО: старый компонент HeroStatsPanel теперь можно ВЫКЛЮЧИТЬ на камере,
-///   чтобы характеристики не рисовались дважды (панель характеристик переехала сюда, по мокапу).
-///
-/// СПРАВА внизу — СЛОТЫ СНАРЯЖЕНИЯ: 6 обычных (по диздоку) + 2 золотых слота уникальных
-/// (уникальное снаряжение «Щит империи» и уникальный артефакт «Благословенный меч» Андрона;
-/// артефакт помечен цифрой "10" — открывается после 10 мета-уровня игрока).
+///   чтобы характеристики не рисовались дважды.
 ///
 /// Клик по обычному слоту — снять предмет (он падает на пол сундучком).
 /// Клик по активному навыку — использовать. Клик по 5-й кнопке — вложить 1 очко характеристик.
@@ -34,23 +33,26 @@ using UnityEngine.EventSystems;
 /// </summary>
 public class HeroBottomPanelUI : MonoBehaviour
 {
-    [Header("Справа внизу — слоты снаряжения")]
-    public Vector2 slotsOffset = new Vector2(20f, 20f);
+    [Header("Слоты шмота (в контейнере: ун. артефакт, ун. шмот, 6 обычных)")]
     public float slotSize = 48f;
     public float slotGap = 6f;
 
-    [Header("Слева внизу — кнопки навыков (1 2 3 4 5, плюсик в конце)")]
-    public Vector2 skillsOffset = new Vector2(20f, 20f);
+    [Header("Кнопки навыков внутри контейнера (1 2 3 4 5, плюсик в конце)")]
     public float skillSize = 52f;
     public float skillGap = 10f;
 
-    [Header("Центр низа — атрибуты + характеристики (живые цифры)")]
-    [Tooltip("Сдвиг центрального блока от низа экрана (ставится выше полосок HP/маны)")]
-    public Vector2 infoOffset = new Vector2(0f, 130f);
-    public float colWidth = 200f;
-    public float colGap = 60f;
+    [Header("Обновление 20 — отдельный бар ХАРАКТЕРИСТИК слева снизу")]
+    [Tooltip("Сдвиг панели характеристик от левого нижнего угла экрана")]
+    public Vector2 charPanelOffset = new Vector2(20f, 20f);
     public float rowHeight = 18f;
     public int infoFontSize = 13;
+
+    [Header("Контейнер: скиллы → атрибуты → ун. артефакт → ун. шмот → обычный шмот")]
+    [Tooltip("Сдвиг контейнера от левого низа (ставится правее бара характеристик)")]
+    public Vector2 containerOffset = new Vector2(270f, 20f);
+    [Tooltip("Зазор между секциями контейнера (скиллы / атрибуты / шмот)")]
+    public float sectionGap = 30f;
+    public float colWidth = 200f;
 
     [Header("Цвета")]
     public Color panelBackColor = new Color(0.06f, 0.06f, 0.09f, 0.65f);
@@ -78,8 +80,8 @@ public class HeroBottomPanelUI : MonoBehaviour
     private Text[]  slotTierTexts;  // "Т1".."Т4" / метки уников
 
     private SkillButton[] skillButtons;
-    private Text[] attrValueTexts;  // ЖИВЫЕ цифры атрибутов (центр)
-    private Text[] charValueTexts;  // живые цифры характеристик (центр)
+    private Text[] attrValueTexts;  // ЖИВЫЕ цифры атрибутов (контейнер, после скиллов)
+    private Text[] charValueTexts;  // живые цифры характеристик (отдельный бар слева снизу)
 
     private static readonly string[] AttrNames = { "Сила", "Живучесть", "Выносливость", "Ловкость", "Мудрость", "Сила воли" };
     private static readonly string[] CharNames =
@@ -182,10 +184,34 @@ public class HeroBottomPanelUI : MonoBehaviour
         root.anchoredPosition = Vector2.zero;
         root.sizeDelta = new Vector2(0f, 230f);
 
-        // ---------- центр: ЖИВЫЕ атрибуты + характеристики (над полосками HP/маны) ----------
-        CreateInfoBlock(root);
+        // ---------- ОБНОВЛЕНИЕ 20: отдельный бар ХАРАКТЕРИСТИК слева снизу ----------
+        BuildCharacteristicsBar(canvas);
 
-        // ---------- навыки СЛЕВА (1 2 3 4 5, идут слева направо) ----------
+        // ---------- единый КОНТЕЙНЕР: скиллы → атрибуты → ун. артефакт → ун. шмот → шмот ----------
+        const int totalSlots = 8;
+        float skillsWidth = 5 * skillSize + 4 * skillGap;              // блок скиллов (5 кнопок)
+        float slotsWidth = totalSlots * slotSize + (totalSlots - 1) * slotGap;
+        float attrX = 10f + skillsWidth + sectionGap;
+        float slotX0 = attrX + colWidth + sectionGap;
+        float containerW = slotX0 + slotsWidth + 10f;
+        float containerH = 8f + (20f + 6 * rowHeight) + 8f;            // по блоку АТРИБУТЫ (6 строк + заголовок)
+
+        var contGO = new GameObject("HeroBottomPanel_Container", typeof(RectTransform));
+        var contRect = (RectTransform)contGO.transform;
+        contRect.SetParent(root, false);
+        contRect.anchorMin = new Vector2(0f, 0f);
+        contRect.anchorMax = new Vector2(0f, 0f);
+        contRect.pivot = new Vector2(0f, 0f);
+        contRect.anchoredPosition = containerOffset;
+        contRect.sizeDelta = new Vector2(containerW, containerH);
+
+        // лёгкий фон контейнера (клики RTS проходят насквозь)
+        var contBg = contGO.AddComponent<Image>();
+        contBg.sprite = WhiteSprite;
+        contBg.color = panelBackColor;
+        contBg.raycastTarget = false;
+
+        // 1) СКИЛЛЫ (1 2 3 4 5, идут слева направо)
         var skillsData = new (string name, string hotkey, AndronSkills.SkillId id)[]
         {
             ("Ярость короля",  "1", AndronSkills.SkillId.Rage),
@@ -195,77 +221,71 @@ public class HeroBottomPanelUI : MonoBehaviour
             ("Атрибуты",       "5", AndronSkills.SkillId.Attributes), // плюсик в конце
         };
 
-        int skillCount = skillsData.Length;
-        skillButtons = new SkillButton[skillCount];
-        for (int i = 0; i < skillCount; i++)
+        skillButtons = new SkillButton[skillsData.Length];
+        for (int i = 0; i < skillsData.Length; i++)
         {
             var data = skillsData[i];
-            skillButtons[i] = CreateSkillButton(root, i, data.name, data.hotkey, data.id);
+            skillButtons[i] = CreateSkillButton(contRect, i, data.name, data.hotkey, data.id);
         }
 
-        // ---------- снаряжение СПРАВА: 6 обычных + 2 уникальных ----------
-        const int totalSlots = 8;
+        // 2) АТРИБУТЫ — живые цифры сразу после скиллов (Сила … Сила воли, 5 раз/сек)
+        attrValueTexts = CreateStatColumn(contRect, "АТРИБУТЫ", AttrNames,
+            new Vector2(attrX, -8f), colWidth);
+
+        // 3..5) шмот по порядку: уникальный артефакт «М» → уникальный шмот «Щ» → 6 обычных
         slotBottoms = new Image[totalSlots];
         slotIcons = new Image[totalSlots];
         slotTierTexts = new Text[totalSlots];
 
-        float slotsWidth = totalSlots * slotSize + (totalSlots - 1) * slotGap;
-
-        var slotsGO = new GameObject("EquipmentSlots", typeof(RectTransform));
-        var slotsRect = (RectTransform)slotsGO.transform;
-        slotsRect.SetParent(root, false);
-        slotsRect.anchorMin = new Vector2(1f, 0f);
-        slotsRect.anchorMax = new Vector2(1f, 0f);
-        slotsRect.pivot = new Vector2(1f, 0f);
-        slotsRect.anchoredPosition = slotsOffset;
-        slotsRect.sizeDelta = new Vector2(slotsWidth, slotSize);
-
         for (int i = 0; i < totalSlots; i++)
         {
-            bool isUnique = i >= 6; // 6 = уникальное снаряжение, 7 = уникальный артефакт
+            bool isUnique = i >= 6; // 6 = уникальный артефакт, 7 = уникальное снаряжение
+            // визуальный порядок: уники (6, 7) идут ПЕРВЫМИ, затем обычные слоты 0..5
+            int visualOrder = i >= 6 ? i - 6 : i + 2;
+            float x = slotX0 + visualOrder * (slotSize + slotGap);
             Image bottom, icon; Text tier;
-            CreateSlot(slotsRect, i, isUnique, out bottom, out icon, out tier);
+            CreateSlot(contRect, i, isUnique, x, out bottom, out icon, out tier);
             slotBottoms[i] = bottom;
             slotIcons[i] = icon;
             slotTierTexts[i] = tier;
         }
     }
 
-    /// <summary>Центральный блок: две колонки живых цифр (АТРИБУТЫ + ХАРАКТЕРИСТИКИ).</summary>
-    private void CreateInfoBlock(Transform root)
+    /// <summary>Обновление 20: ОТДЕЛЬНЫЙ бар ХАРАКТЕРИСТИК слева снизу (9 живых строк, 5 раз/сек).</summary>
+    private void BuildCharacteristicsBar(Canvas canvas)
     {
-        var infoGO = new GameObject("InfoCenter", typeof(RectTransform));
-        var infoRect = (RectTransform)infoGO.transform;
-        infoRect.SetParent(root, false);
-        infoRect.anchorMin = new Vector2(0.5f, 0f);
-        infoRect.anchorMax = new Vector2(0.5f, 0f);
-        infoRect.pivot = new Vector2(0.5f, 0f);
-        infoRect.anchoredPosition = infoOffset;
-        infoRect.sizeDelta = new Vector2(colWidth * 2f + colGap, rowHeight * CharNames.Length + 24f);
+        float colHeight = 20f + rowHeight * CharNames.Length;
+        var barGO = new GameObject("HeroCharPanel_Root", typeof(RectTransform));
+        var barRect = (RectTransform)barGO.transform;
+        barRect.SetParent(canvas.transform, false);
+        barRect.anchorMin = new Vector2(0f, 0f);
+        barRect.anchorMax = new Vector2(0f, 0f);
+        barRect.pivot = new Vector2(0f, 0f);
+        barRect.anchoredPosition = charPanelOffset;
+        barRect.sizeDelta = new Vector2(colWidth + 20f, colHeight + 20f);
 
         // лёгкий фон панели (клики RTS проходят насквозь)
-        var bg = infoGO.AddComponent<Image>();
+        var bg = barGO.AddComponent<Image>();
         bg.sprite = WhiteSprite;
         bg.color = panelBackColor;
         bg.raycastTarget = false;
 
-        attrValueTexts = CreateInfoColumn(infoRect, "АТРИБУТЫ", AttrNames, 0);
-        charValueTexts = CreateInfoColumn(infoRect, "ХАРАКТЕРИСТИКИ", CharNames, 1);
+        charValueTexts = CreateStatColumn(barRect, "ХАРАКТЕРИСТИКИ", CharNames,
+            new Vector2(10f, -10f), colWidth);
     }
 
     /// <summary>Колонка живых цифр: заголовок + строки «имя … значение». Возвращает тексты значений.</summary>
-    private Text[] CreateInfoColumn(RectTransform parent, string header, string[] names, int columnIndex)
+    private Text[] CreateStatColumn(RectTransform parent, string header, string[] names,
+                                    Vector2 anchorPos, float width)
     {
         var colGO = new GameObject("Col_" + header, typeof(RectTransform));
         var colRect = (RectTransform)colGO.transform;
         colRect.SetParent(parent, false);
-        colRect.anchorMin = new Vector2(0.5f, 0f);
-        colRect.anchorMax = new Vector2(0.5f, 0f);
-        colRect.pivot = new Vector2(0f, 0f);
-        // колонка 0 — слева от центра, колонка 1 — справа от центра
-        float centerXOffset = columnIndex == 0 ? -colWidth - colGap * 0.5f : colGap * 0.5f;
-        colRect.anchoredPosition = new Vector2(centerXOffset, 0f);
-        colRect.sizeDelta = new Vector2(colWidth, rowHeight * names.Length + 24f);
+        colRect.anchorMin = new Vector2(0f, 1f);
+        colRect.anchorMax = new Vector2(0f, 1f);
+        colRect.pivot = new Vector2(0f, 1f);
+        colRect.anchoredPosition = anchorPos;
+        colRect.sizeDelta = new Vector2(width, 20f + rowHeight * names.Length);
 
         // заголовок
         var head = CreateLabel(colRect, "Header", infoFontSize + 1);
@@ -276,10 +296,10 @@ public class HeroBottomPanelUI : MonoBehaviour
         head.rectTransform.anchorMin = new Vector2(0f, 1f);
         head.rectTransform.anchorMax = new Vector2(1f, 1f);
         head.rectTransform.pivot = new Vector2(0f, 1f);
-        head.rectTransform.anchoredPosition = new Vector2(8f, 0f);
+        head.rectTransform.anchoredPosition = new Vector2(4f, 0f);
         head.rectTransform.sizeDelta = new Vector2(0f, 20f);
 
-        // строки
+        // строки «имя … значение»
         var values = new Text[names.Length];
         for (int i = 0; i < names.Length; i++)
         {
@@ -289,7 +309,7 @@ public class HeroBottomPanelUI : MonoBehaviour
             rowRect.anchorMin = new Vector2(0f, 1f);
             rowRect.anchorMax = new Vector2(1f, 1f);
             rowRect.pivot = new Vector2(0f, 1f);
-            rowRect.anchoredPosition = new Vector2(0f, -22f - i * rowHeight);
+            rowRect.anchoredPosition = new Vector2(0f, -20f - i * rowHeight);
             rowRect.sizeDelta = new Vector2(0f, rowHeight);
 
             var n = CreateLabel(rowRect, "Name", infoFontSize);
@@ -300,7 +320,7 @@ public class HeroBottomPanelUI : MonoBehaviour
             n.rectTransform.anchorMax = new Vector2(1f, 1f);
             n.rectTransform.pivot = new Vector2(0f, 0f);
             n.rectTransform.anchoredPosition = new Vector2(8f, 1f);
-            n.rectTransform.sizeDelta = new Vector2(colWidth * 0.6f, 0f);
+            n.rectTransform.sizeDelta = new Vector2(width * 0.6f, 0f);
 
             var v = CreateLabel(rowRect, "Value", infoFontSize);
             v.alignment = TextAnchor.LowerRight;
@@ -310,24 +330,24 @@ public class HeroBottomPanelUI : MonoBehaviour
             v.rectTransform.anchorMax = new Vector2(1f, 1f);
             v.rectTransform.pivot = new Vector2(1f, 0f);
             v.rectTransform.anchoredPosition = new Vector2(-8f, 1f);
-            v.rectTransform.sizeDelta = new Vector2(colWidth * 0.5f, 0f);
+            v.rectTransform.sizeDelta = new Vector2(width * 0.5f, 0f);
 
             values[i] = v;
         }
         return values;
     }
 
-    private void CreateSlot(RectTransform parent, int index, bool isUnique,
+    private void CreateSlot(RectTransform parent, int index, bool isUnique, float x,
                             out Image bottom, out Image icon, out Text tierText)
     {
         var slotGO = new GameObject("Slot_" + index, typeof(RectTransform));
         var rect = (RectTransform)slotGO.transform;
         rect.SetParent(parent, false);
-        rect.anchorMin = new Vector2(1f, 0f);
-        rect.anchorMax = new Vector2(1f, 0f);
-        rect.pivot = new Vector2(1f, 0f);
-        // слоты идут справа налево: первый — у правого края
-        rect.anchoredPosition = new Vector2(-(index + 1) * slotSize - index * slotGap, 0f);
+        rect.anchorMin = new Vector2(0f, 0f);
+        rect.anchorMax = new Vector2(0f, 0f);
+        rect.pivot = new Vector2(0f, 0f);
+        // позиция внутри контейнера: уники (6, 7) первыми, затем обычные 0..5
+        rect.anchoredPosition = new Vector2(x, 8f);
         rect.sizeDelta = new Vector2(slotSize, slotSize);
 
         // фон слота (кликается — снять предмет)
@@ -385,7 +405,7 @@ public class HeroBottomPanelUI : MonoBehaviour
         rect.anchorMax = new Vector2(0f, 0f);
         rect.pivot = new Vector2(0f, 0f);
         // кнопки идут слева направо: первая (цифра 1) — у левого края
-        rect.anchoredPosition = skillsOffset + new Vector2(index * (skillSize + skillGap), 0f);
+        rect.anchoredPosition = new Vector2(10f + index * (skillSize + skillGap), 8f);
         rect.sizeDelta = new Vector2(skillSize, skillSize);
 
         var bg = btnGO.AddComponent<Image>();
@@ -506,10 +526,11 @@ public class HeroBottomPanelUI : MonoBehaviour
         // ---------- слоты 6/7 — уники Андрона ----------
         if (uniques != null)
         {
+            // 6 = уникальный артефакт «М» (первый в контейнере), 7 = уникальное снаряжение «Щ»
             RefreshUniqueSlot(slotIcons[6], slotBottoms[6], slotTierTexts[6],
-                uniques.UniqueEquipLevel, "Щ", !uniques.ArtifactUnlocked);
-            RefreshUniqueSlot(slotIcons[7], slotBottoms[7], slotTierTexts[7],
                 uniques.UniqueArtifactLevel, "М", !uniques.ArtifactUnlocked);
+            RefreshUniqueSlot(slotIcons[7], slotBottoms[7], slotTierTexts[7],
+                uniques.UniqueEquipLevel, "Щ", !uniques.ArtifactUnlocked);
         }
 
         // ---------- кнопки навыков ----------
