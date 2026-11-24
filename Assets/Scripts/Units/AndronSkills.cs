@@ -11,10 +11,12 @@ using UnityEngine;
 ///    Ур.N: N ударов, урон = 30 + (0.5 + 0.5*N) * СИЛА, каждый удар создаёт волну,
 ///    дальность волны N-го удара = дальность атаки * (1 + 0.5*N) — каждая дальше.
 ///    Волны — ярко золото-фиолетовые (спец-эффект из диздока), рисуются кодом.
+///    Каждый удар — замах анимацией атаки героя (PlayAttackAnimation), 5 ударов ≈ в течение секунды.
 ///
 /// 2. Взрыв щита (АКТИВ, перезарядка 1 мин 20 сек) — волна ВОКРУГ героя, бьёт нейтралов и врагов.
 ///    Ур.1-5: урон = 50 + {1,1.5,1.5,2,2}*СИЛА + {1,1,1.5,1.5,2}*ВЫНОСЛИВОСТЬ,
-///    радиус = дальность атаки * {7,9,11,13,16}. Волна — белая (по диздоку).
+///    радиус = дальность атаки * {7,9,11,13,16} (+600%..+1500%); ПРОТИВНИК получает
+///    на +20% общего урона больше, чем нейтрал (по диздоку). Волна — белая (по диздоку).
 ///
 /// 3. Щит империи (ПАССИВ) — отражение урона: 10/20/30/40/50%.
 ///    Работает ЧЕРЕЗ суммарное отражение: пассивка + уникальное снаряжение (AndronUniqueEquipment).
@@ -24,8 +26,8 @@ using UnityEngine;
 /// 4. Родословная (ПАССИВ) — +сила и +выносливость: 5/10/20/35/50.
 ///
 /// 5. Плюсик атрибутов — кнопка распределения нераспределённых очков характеристик
-///    (HeroExperience.unspentPoints). Клик — вкладывает 1 очко в следующий атрибут по кругу:
-///    Сила → Живучесть → Выносливость → Ловкость → Мудрость → Сила воли → и заново.
+///    (HeroExperience.unspentPoints). Клик — тратит 1 очко и поднимает ВСЕ 6 атрибутов
+///    на +1 одновременно (по уточнению: не по одному по кругу, а всем сразу).
 ///
 /// Прокачка: CanUpgrade = skillLevel < 5 И heroLevel >= skillLevel*5 (5 ур. героя — 1-й уровень скилла,
 /// 10 — второй, 15 — третий, 20 — четвёртый, 25 — пятый). "+"-кнопка в UI вызывает UpgradeSkill.
@@ -43,6 +45,9 @@ public class AndronSkills : MonoBehaviour
     [Header("Перезарядки, сек (по диздоку)")]
     public float rageCooldown = 20f;
     public float shieldBlastCooldown = 80f;
+
+    [Header("Ярость короля: интервал между ударами, сек (по умолчанию 5 ударов ≈ 1 сек)")]
+    public float rageStrikeInterval = 0.2f;
 
     [Header("Отражение урона (суммарно с уникальным снаряжением)")]
     [Tooltip("Радиус поиска врага для возврата урона")]
@@ -93,11 +98,6 @@ public class AndronSkills : MonoBehaviour
         return id != SkillId.Attributes && lvl < 5 && lvl < allowed;
     }
 
-    // ---- Порядок распределения очков по кругу ----
-    private static readonly string[] AttrOrder = { "Сила", "Живучесть", "Выносливость", "Ловкость", "Мудрость", "Сила воли" };
-    private int attrCycleIndex;
-    /// <summary>Какой атрибут получит очко при следующем клике (для подписи под кнопкой F).</summary>
-    public string NextAttribute { get { return AttrOrder[attrCycleIndex]; } }
     /// <summary>Сколько нераспределённых очков (для UI).</summary>
     public int UnspentPoints { get { return xp != null ? xp.unspentPoints : 0; } }
 
@@ -149,23 +149,23 @@ public class AndronSkills : MonoBehaviour
         return true;
     }
 
-    /// <summary>Вложенные игроком очки атрибутов: [сила, живучесть, выносливость, ловкость, мудрость, сила воли].</summary>
+    /// <summary>Вложенные игроком очки атрибутов: [сила, живучесть, выносливость, ловкость, мудрость, сила воли].
+    /// Обновление 21: один клик «+» добавляет +1 СРАЗУ во все 6 атрибутов.</summary>
     private float[] attrPoints = new float[6];
 
     // запасная дельта для пути без EquipmentSystem
     private float fbStr, fbVit, fbEnd;
 
-    /// <summary>Вложить 1 очко характеристик в следующий атрибут по кругу (5-я кнопка).</summary>
+    /// <summary>Вложить 1 очко характеристик: ВСЕ 6 атрибутов получают +1 (5-я кнопка).</summary>
     public bool SpendAttributePoint()
     {
         if (xp == null || xp.unspentPoints <= 0) return false;
 
         xp.unspentPoints--;
-        attrPoints[attrCycleIndex] += 1f;
+        for (int i = 0; i < attrPoints.Length; i++) attrPoints[i] += 1f;
         ApplyBloodline(); // пересобирает дельту навыков: Родословная + вложенные очки (максимум HP меняется через EquipmentSystem)
 
-        if (logSkills) Debug.Log($"[НАВЫК] Очко вложено в «{AttrOrder[attrCycleIndex]}». Осталось очков: {xp.unspentPoints}");
-        attrCycleIndex = (attrCycleIndex + 1) % AttrOrder.Length;
+        if (logSkills) Debug.Log($"[НАВЫК] Очко вложено: ВСЕ 6 атрибутов +1 (сила {attrPoints[0]:0}, живучесть {attrPoints[1]:0}, выносливость {attrPoints[2]:0}, ловкость {attrPoints[3]:0}, мудрость {attrPoints[4]:0}, сила воли {attrPoints[5]:0}). Осталось очков: {xp.unspentPoints}");
         return true;
     }
 
@@ -287,11 +287,12 @@ public class AndronSkills : MonoBehaviour
         // N ударов с интервалом, каждый создаёт волну ДАЛЬШЕ предыдущей (+50% дальности атаки за удар)
         for (int s = 1; s <= strikes; s++)
         {
+            if (stats != null && !stats.isDead) stats.PlayAttackAnimation(); // замах мечом на каждый удар
             float waveRadius = attackRange * (1f + 0.5f * s);
             float damage = baseDamage + strengthMult * strength;
             DamageSector(waveRadius, 90f, damage, new Color(1f, 0.85f, 0.2f)); // золото-фиолетовая волна
             if (logSkills) Debug.Log($"[ЯРОСТЬ КОРОЛЯ] удар {s}/{strikes}: {damage:0} урона, волна {waveRadius:0.0}м");
-            yield return new WaitForSeconds(0.35f);
+            yield return new WaitForSeconds(rageStrikeInterval);
         }
     }
 
@@ -302,12 +303,14 @@ public class AndronSkills : MonoBehaviour
         float range = battleAI != null ? battleAI.attackRange : 2f;
         float[] sMult = { 1f, 1.5f, 1.5f, 2f, 2f };
         float[] eMult = { 1f, 1f, 1.5f, 1.5f, 2f };
-        float radius = range * (5f + 2f * shieldBlastLevel); // +600%..+1500% к дальности атаки
-        float damage = 50f + sMult[shieldBlastLevel - 1] * stats.strength + eMult[shieldBlastLevel - 1] * stats.endurance;
+        float[] radiusMult = { 7f, 9f, 11f, 13f, 16f }; // +600%..+1500% к дальности атаки (по диздоку)
+        float baseDamage = 50f + sMult[shieldBlastLevel - 1] * stats.strength + eMult[shieldBlastLevel - 1] * stats.endurance;
+        float radius = range * radiusMult[shieldBlastLevel - 1];
 
         shieldBlastReadyTime = Time.time + shieldBlastCooldown;
 
-        // волна вокруг героя — по диздоку бьёт НЕЙТРАЛОВ и ВРАГОВ
+        // волна вокруг героя — по диздоку бьёт НЕЙТРАЛОВ и ВРАГОВ,
+        // ПРОТИВНИК получает на +20% общего урона больше, чем нейтрал
         var hits = Physics.OverlapSphere(transform.position, radius);
         int damaged = 0;
         foreach (var c in hits)
@@ -317,13 +320,14 @@ public class AndronSkills : MonoBehaviour
             var u = c.GetComponentInParent<UnitStats>();
             if (u == null || u.isDead) continue;
             if (c.transform.root == transform.root) continue;
-            u.TakeDamage(damage);
-            DamagePopup.Spawn(c.transform.position + Vector3.up * 1.5f, damage, false);
+            float dmg = layer == 9 ? baseDamage * 1.2f : baseDamage; // противнику +20%
+            u.TakeDamage(dmg);
+            DamagePopup.Spawn(c.transform.position + Vector3.up * 1.5f, dmg, false);
             damaged++;
         }
 
         SpawnWaveVisual(transform.position, radius, Color.white); // белая волна (диздок)
-        if (logSkills) Debug.Log($"[ВЗРЫВ ЩИТА] ур.{shieldBlastLevel}: {damage:0} урона по {damaged} целям, радиус {radius:0.0}м");
+        if (logSkills) Debug.Log($"[ВЗРЫВ ЩИТА] ур.{shieldBlastLevel}: {baseDamage:0} урона (врагам ×1.2) по {damaged} целям, радиус {radius:0.0}м");
         return true;
     }
 

@@ -542,13 +542,13 @@ public class HeroBottomPanelUI : MonoBehaviour
 
             if (btn.id == AndronSkills.SkillId.Attributes)
             {
-                // 5-я кнопка: нераспределённые очки + следующий атрибут по кругу
+                // 5-я кнопка: нераспределённые очки; клик — ВСЕ 6 атрибутов +1
                 int points = skills.UnspentPoints;
                 btn.levelText.text = points + " " + (points == 1 ? "очко" : points < 5 ? "очка" : "очков");
                 btn.levelText.color = points > 0 ? upgradeColor : textColor;
                 btn.plus.color = points > 0 ? upgradeColor : new Color(0.35f, 0.35f, 0.35f);
                 btn.cooldown.fillAmount = 0f;
-                btn.cooldownText.text = skills.NextAttribute;
+                btn.cooldownText.text = "всем +1";
                 continue;
             }
 
