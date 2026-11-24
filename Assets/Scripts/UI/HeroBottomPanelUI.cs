@@ -908,7 +908,7 @@ public class HeroBottomPanelUI : MonoBehaviour
                "Если атакует ПРОТИВНИК — ещё +5 к защите (не на нейтралов, заготовка).\n" +
                "Отражение урона: 10% на ур.1, +1% за каждый уровень → сейчас от уника " +
                uniques.ShieldReflectPercent.ToString("0") + "%\n" +
-               "Суммарно с пассивкой: " + (skills != null ? skills.TotalReflectPercent.ToString("0") : "0") + "%."
+               "Суммарно с пассивкой: " + (skills != null ? skills.TotalReflectPercent.ToString("0") : "0") + "%.";
     }
 
     // ==================== EVENTSYSTEM ====================
