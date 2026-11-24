@@ -46,6 +46,11 @@ public class HeroTooltipUI : MonoBehaviour
         instance.root = (RectTransform)go.transform;
         instance.root.SetParent(canvas.transform, false);
         instance.root.SetAsLastSibling(); // поверх всех элементов HUD
+        // ОБНОВЛЕНИЕ 26: рисуем окно ПОВЕРХ ВСЕГО — собственный вложенный Canvas с overrideSorting:
+        // даже если панель магазина/трансмутации добавится в канвас позже, тултип всегда поверх панелей.
+        var topCanvas = instance.gameObject.AddComponent<Canvas>();
+        topCanvas.overrideSorting = true;
+        topCanvas.sortingOrder = 30000;
         instance.root.anchorMin = Vector2.zero;
         instance.root.anchorMax = Vector2.zero;
         instance.root.pivot = new Vector2(0f, 1f); // точка отсчёта — левый верх окна
@@ -86,6 +91,7 @@ public class HeroTooltipUI : MonoBehaviour
         instance.bodyFn = bFn;
         instance.positioned = false;
         if (!instance.gameObject.activeSelf) instance.gameObject.SetActive(true);
+        instance.root.SetAsLastSibling(); // ОБНОВЛЕНИЕ 26: поднимаем поверх любых поздних панелей
         instance.Render();
     }
 

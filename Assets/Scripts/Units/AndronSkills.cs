@@ -31,6 +31,8 @@ using UnityEngine;
 ///
 /// Прокачка: по диздоку CanUpgrade = skillLevel < 5 И heroLevel >= skillLevel*5 (5 ур. героя — 1-й уровень скилла,
 /// 10 — второй, 15 — третий, 20 — четвёртый, 25 — пятый). "+"-кнопка в UI вызывает UpgradeSkill.
+/// ОБНОВЛЕНИЕ 26: каждый уровень КАЖДОГО навыка стоит ОТДЕЛЬНОЕ очко навыков — очко списывается
+/// при каждом вложении (закрытие: раньше очки не тратились и одно очко открывало всё сразу).
 /// ОБНОВЛЕНИЕ 25: тестовый режим завершён — гейт по уровню героя снова ВКЛЮЧЁН по диздоку (по умолчанию ВКЛ):
 /// ур.5 → lvl1, ур.10 → lvl2, ур.15 → lvl3, ур.20 → lvl4, ур.25 → lvl5. Для тестов можно снять галку в инспекторе.
 /// </summary>
@@ -129,7 +131,7 @@ public class AndronSkills : MonoBehaviour
         ApplyBloodline();
         // ОБНОВЛЕНИЕ 23: маркер версии кода — если этой строки НЕТ в консоли, то проект скомпилировался
         // со старой сборкой (ищи красные ошибки компиляции) или AndronSkills.cs не заменён.
-        Debug.Log($"[НАВЫК] AndronSkills ОБНОВЛЕНИЕ 23 запущен: гейт уровня героя gateSkillsByHeroLevel = {gateSkillsByHeroLevel} (true/ВКЛ = по диздоку: ур.5→lvl1, 10→2, 15→3, 20→4, 25→5 (ОБНОВЛЕНИЕ 25)). Нераспределённых очков: {UnspentPoints}");
+        Debug.Log($"[НАВЫК] AndronSkills ОБНОВЛЕНИЕ 26 запущен: гейт уровня героя gateSkillsByHeroLevel = {gateSkillsByHeroLevel} (true/ВКЛ = по диздоку: ур.5→lvl1, 10→2, 15→3, 20→4, 25→5 (ОБНОВЛЕНИЕ 25)). Нераспределённых очков: {UnspentPoints}");
     }
 
     void Update()
@@ -166,6 +168,15 @@ public class AndronSkills : MonoBehaviour
                 return false;
             }
         }
+        // ОБНОВЛЕНИЕ 26: трата очка — КАЖДЫЙ уровень КАЖДОГО навыка стоит 1 отдельное очко навыков
+        // (за одно очко больше нельзя выучить всё; очки те же, что и у плюсика атрибутов).
+        if (xp == null || xp.unspentPoints <= 0)
+        {
+            Debug.Log($"[НАВЫК] {id}: НЕТ очков навыков — каждый уровень навыка стоит 1 отдельное очко (очки дают уровни героя; общие с плюсиком атрибутов).");
+            return false;
+        }
+        xp.unspentPoints--;
+
         switch (id)
         {
             case SkillId.Rage: rageLevel++; break;
@@ -173,7 +184,7 @@ public class AndronSkills : MonoBehaviour
             case SkillId.EmpireShieldPassive: empireShieldLevel++; break;
             case SkillId.BloodlinePassive: bloodlineLevel++; break;
         }
-        if (logSkills) Debug.Log($"[НАВЫК] {id} повышен до ур. {GetSkillLevel(id)}");
+        if (logSkills) Debug.Log($"[НАВЫК] {id} повышен до ур. {GetSkillLevel(id)} — списано 1 очко навыков, осталось: {UnspentPoints}");
         if (id == SkillId.BloodlinePassive) ApplyBloodline();
         return true;
     }
