@@ -35,8 +35,12 @@ using UnityEngine;
 /// при каждом вложении (закрытие: раньше очки не тратились и одно очко открывало всё сразу).
 /// ОБНОВЛЕНИЕ 25: тестовый режим завершён — гейт по уровню героя снова ВКЛЮЧЁН по диздоку (по умолчанию ВКЛ):
 /// ур.5 → lvl1, ур.10 → lvl2, ур.15 → lvl3, ур.20 → lvl4, ур.25 → lvl5. Для тестов можно снять галку в инспекторе.
+/// ОБНОВЛЕНИЕ 28 (A1): удары Ярости короля привязаны к КАДРУ СОБЫТИЯ УДАРА анимации — BattleAI вызывает
+/// InterceptAttackHit() (интерфейс IAttackHitInterceptor): каждый замах анимацией атаки даёт волну 90°,
+/// радиус которой растёт с ударом (+50%/+100%/…), обычный урон на этом замахе отменяется.
+/// ОБНОВЛЕНИЕ 28 (A3): касты привязаны к мане: Ярость короля = 160, Взрыв щита = 250 (цены НЕ зависят от уровня).
 /// </summary>
-public class AndronSkills : MonoBehaviour
+public class AndronSkills : MonoBehaviour, IAttackHitInterceptor
 {
     public enum SkillId { Rage = 0, ShieldBlast = 1, EmpireShieldPassive = 2, BloodlinePassive = 3, Attributes = 4 }
 
@@ -52,6 +56,12 @@ public class AndronSkills : MonoBehaviour
 
     [Header("Ярость короля: интервал между ударами, сек (по умолчанию 5 ударов ≈ 1 сек)")]
     public float rageStrikeInterval = 0.2f;
+
+    [Header("Мана: цены кастов (ОБНОВЛЕНИЕ 28) — стартовые, НЕ зависят от уровня")]
+    [Tooltip("Цена каста Ярости короля, мана")]
+    public float rageManaCost = 160f;
+    [Tooltip("Цена каста Взрыва щита, мана")]
+    public float shieldBlastManaCost = 250f;
 
     [Header("Гейт прокачки по уровню героя (ОБНОВЛЕНИЕ 25 — по диздоку, по умолчанию ВКЛ)")]
     [Tooltip("ВКЛ = по диздоку: ур.5 → lvl1, ур.10 → lvl2, 15 → 3, 20 → 4, 25 → 5. ВЫКЛ = каждый уровень (тест)")]
@@ -75,6 +85,12 @@ public class AndronSkills : MonoBehaviour
 
     // ---- Кулдауны ----
     private float rageReadyTime, shieldBlastReadyTime;
+
+    // ---- ОБНОВЛЕНИЕ 28 (A1): волна Ярости ждёт КАДРА СОБЫТИЯ УДАРА анимации ----
+    private bool rageWavePending;   // взведено: следующий кадр удара анимации превращается в волну
+    private float rageWaveRadius;   // радиус волны следующего удара
+    private float rageWaveDamage;   // урон следующего удара
+    private Coroutine rageRoutine;
     /// <summary>Остаток перезарядки навыка в секундах (для UI).</summary>
     public float GetCooldownRemaining(SkillId id)
     {
@@ -111,6 +127,32 @@ public class AndronSkills : MonoBehaviour
 
     /// <summary>Сколько нераспределённых очков (для UI).</summary>
     public int UnspentPoints { get { return xp != null ? xp.unspentPoints : 0; } }
+
+    // ---------------- МАНА (ОБНОВЛЕНИЕ 28, A3) ----------------
+
+    /// <summary>Цена каста в мане (для тултипов и UI). Стартовые цены НЕ зависят от уровня навыка.</summary>
+    public float GetManaCost(SkillId id)
+    {
+        switch (id)
+        {
+            case SkillId.Rage: return rageManaCost;
+            case SkillId.ShieldBlast: return shieldBlastManaCost;
+            default: return 0f;
+        }
+    }
+
+    /// <summary>Списать ману под каст. false — маны не хватает (точная причина в логе). HeroStats НЕ правим — списываем через публичное поле.</summary>
+    private bool TrySpendMana(float cost)
+    {
+        if (stats == null) return true;
+        if (stats.currentMana < cost)
+        {
+            if (logSkills) Debug.Log($"[НАВЫК] Недостаточно маны: нужно {cost:0}, есть {stats.currentMana:0}. Каст отменён — качайте Мудрость (мана = 15×Мудрость) или ждите реген.");
+            return false;
+        }
+        stats.currentMana -= cost;
+        return true;
+    }
 
     // ---------------- ЖИЗНЕННЫЙ ЦИКЛ ----------------
 
@@ -312,33 +354,91 @@ public class AndronSkills : MonoBehaviour
     private bool CastRage()
     {
         if (rageLevel <= 0 || !IsReady(SkillId.Rage)) return false;
+        if (!TrySpendMana(rageManaCost)) return false; // ОБНОВЛЕНИЕ 28 (A3): каст привязан к мане (цена не зависит от уровня)
         float range = battleAI != null ? battleAI.attackRange : 2f;
         float strength = stats.strength;
         int strikes = rageLevel;
         float mult = 0.5f + 0.5f * rageLevel;
 
         rageReadyTime = Time.time + rageCooldown;
-        StartCoroutine(RageStrikes(strikes, 30f, mult, strength, range));
+        if (rageRoutine != null) StopCoroutine(rageRoutine);
+        rageRoutine = StartCoroutine(RageStrikes(strikes, 30f, mult, strength, range));
         return true;
     }
 
     private IEnumerator RageStrikes(int strikes, float baseDamage, float strengthMult, float strength, float attackRange)
     {
-        // N ударов с интервалом, каждый создаёт волну ДАЛЬШЕ предыдущей (+50% дальности атаки за удар)
+        // ОБНОВЛЕНИЕ 28 (A1): удары привязаны к КАДРУ СОБЫТИЯ УДАРА анимации, а не к таймеру.
+        // Замах анимацией атаки → анимация даёт событие удара → BattleAI.OnAttackHitEvent →
+        // InterceptAttackHit() отдаёт волну 90° и отменяет обычный урон за этот замах.
+        // Множитель анимации подбираем так, чтобы клип проигрывался за rageStrikeInterval сек —
+        // отсюда темп ударов (5 ударов ≈ 1 сек); на такой скорости замах выглядит грубо — это ок.
+        float clipLen = battleAI != null ? battleAI.baseAttackClipLength : 1.5f;
+        float swingMult = clipLen / Mathf.Max(0.02f, rageStrikeInterval);
+        Animator anim = battleAI != null ? battleAI.GetComponentInChildren<Animator>()
+                                         : (stats != null ? stats.GetComponentInChildren<Animator>() : null);
+        Color rageColor = new Color(1f, 0.85f, 0.2f); // золотистая волна Ярости
+
+        if (battleAI != null) battleAI.attackSuppressed = true; // гасим обычные автоатаки на время Ярости
+
         for (int s = 1; s <= strikes; s++)
         {
-            if (stats != null && !stats.isDead) stats.PlayAttackAnimation(); // замах мечом на каждый удар
-            float waveRadius = attackRange * (1f + 0.5f * s);
-            float damage = baseDamage + strengthMult * strength;
-            DamageSector(waveRadius, 90f, damage, new Color(1f, 0.85f, 0.2f)); // золото-фиолетовая волна
-            if (logSkills) Debug.Log($"[ЯРОСТЬ КОРОЛЯ] удар {s}/{strikes}: {damage:0} урона, волна {waveRadius:0.0}м");
-            yield return new WaitForSeconds(rageStrikeInterval);
+            if (stats != null && stats.isDead) break;
+
+            rageWaveRadius = attackRange * (1f + 0.5f * s); // волна КАЖДОГО удара дальше: +50%/+100%/…
+            rageWaveDamage = baseDamage + strengthMult * strength;
+            rageWavePending = true; // взводим: волна уйдёт ТОЛЬКО по кадру события удара
+
+            if (anim != null && stats != null)
+            {
+                stats.PlayAttackAnimation(); // замах мечом
+                anim.SetFloat("AttackSpeedMult", swingMult); // ПОСЛЕ PlayAttackAnimation — иначе она перезапишет множитель обычной скоростью
+            }
+            else
+            {
+                // Запасной путь (аниматора нет): бьём по таймеру, как раньше — главное чтобы работало.
+                rageWavePending = false;
+                DamageSector(rageWaveRadius, 90f, rageWaveDamage, rageColor);
+                if (logSkills) Debug.Log($"[ЯРОСТЬ КОРОЛЯ] удар {s}/{strikes}: {rageWaveDamage:0} урона, волна {rageWaveRadius:0.0}м (без анимации — таймер)");
+                yield return new WaitForSeconds(rageStrikeInterval);
+                continue;
+            }
+
+            // Ждём кадр события удара с тайм-аутом; если анимация его не дала — удар принудительно (фолбэк).
+            float wait = rageStrikeInterval * 2.5f;
+            while (rageWavePending && wait > 0f) { wait -= Time.deltaTime; yield return null; }
+            if (rageWavePending)
+            {
+                rageWavePending = false;
+                DamageSector(rageWaveRadius, 90f, rageWaveDamage, rageColor);
+                if (logSkills) Debug.Log($"[ЯРОСТЬ КОРОЛЯ] удар {s}/{strikes}: анимация не дала кадр удара — волна нанесена принудительно (фолбэк)");
+            }
         }
+
+        rageWavePending = false;
+        if (battleAI != null) battleAI.attackSuppressed = false;
+        rageRoutine = null;
+    }
+
+    // ---------------- ПЕРЕХВАТ УДАРА (ОБНОВЛЕНИЕ 28, A1) ----------------
+
+    /// <summary>Кадр события удара анимации приходит сюда через BattleAI.OnAttackHitEvent.
+    /// true — замах потрачен на волну Ярости: обычный урон BattleAI за этот замах отменяется.</summary>
+    public bool InterceptAttackHit()
+    {
+        if (!rageWavePending) return false;
+        rageWavePending = false;
+        float radius = rageWaveRadius;
+        float damage = rageWaveDamage;
+        DamageSector(radius, 90f, damage, new Color(1f, 0.85f, 0.2f)); // золотая волна Ярости
+        if (logSkills) Debug.Log($"[ЯРОСТЬ КОРОЛЯ] удар по КАДРУ анимации: {damage:0} урона, волна 90° радиусом {radius:0.0} м");
+        return true;
     }
 
     private bool CastShieldBlast()
     {
         if (shieldBlastLevel <= 0 || !IsReady(SkillId.ShieldBlast)) return false;
+        if (!TrySpendMana(shieldBlastManaCost)) return false; // ОБНОВЛЕНИЕ 28 (A3): каст привязан к мане (цена не зависит от уровня)
 
         float range = battleAI != null ? battleAI.attackRange : 2f;
         float[] sMult = { 1f, 1.5f, 1.5f, 2f, 2f };

@@ -741,7 +741,15 @@ public class HeroBottomPanelUI : MonoBehaviour
             return;
         }
         if (!skills.CastSkill(id))
-            Debug.Log($"[НАВЫК] {id}: сейчас нельзя — идёт перезарядка ({skills.GetCooldownRemaining(id):0.0} сек) или герой мёртв.");
+        {
+            // ОБНОВЛЕНИЕ 28: разбор причины отказа — нет маны или идёт перезарядка/герой мёртв
+            float cost = skills.GetManaCost(id);
+            float haveMana = hero != null ? hero.currentMana : 0f;
+            if (cost > 0f && hero != null && haveMana < cost)
+                Debug.Log($"[НАВЫК] {id}: каст отменён — НЕТ МАНЫ (нужно {cost:0}; есть {haveMana:0}). Качайте Мудрость (мана = 15×Мудрость) или ждите реген.");
+            else
+                Debug.Log($"[НАВЫК] {id}: сейчас нельзя — идёт перезарядка ({skills.GetCooldownRemaining(id):0.0} сек) или герой мёртв.");
+        }
     }
 
     public void OnPlusClicked(AndronSkills.SkillId id)
@@ -797,6 +805,7 @@ public class HeroBottomPanelUI : MonoBehaviour
             {
                 if (lvl <= 0)
                     return "Активный, горячая клавиша 1. Перезарядка " + skills.rageCooldown + " c.\n" +
+                           "Мана за каст: " + skills.GetManaCost(id).ToString("0") + " (сейчас маны: " + (hero != null ? hero.currentMana.ToString("0") : "?") + ").\n" +
                            "Несколько ударов мечом, каждый — замах анимацией (интервал " + skills.rageStrikeInterval + " c).\n" +
                            "Каждый удар: 30 + сила×{1 / 1.5 / 2 / 2.5 / 3} на уровнях 1–5, волна 90° перед героем.\n" +
                            "Каждая волна ДАЛЬШЕ: +50% × номер удара к дальности атаки (+50%…+250%)." + learn;
@@ -804,7 +813,8 @@ public class HeroBottomPanelUI : MonoBehaviour
                 float dmg = 30f + mult * str;
                 float range = heroAI != null ? heroAI.attackRange : 0f;
                 return "Активный, горячая клавиша 1. Перезарядка " + skills.rageCooldown + " c.\n" +
-                       "Ударов сейчас: " + lvl + " (интервал " + skills.rageStrikeInterval + " c, замах анимацией).\n" +
+                       "Мана за каст: " + skills.GetManaCost(id).ToString("0") + " (сейчас маны: " + (hero != null ? hero.currentMana.ToString("0") : "?") + ").\n" +
+                       "Ударов сейчас: " + lvl + " (интервал " + skills.rageStrikeInterval + " c, замах анимацией — удар по кадру события анимации).\n" +
                        "Урон одного удара: 30 + сила×" + mult.ToString("0.##") + " = " + dmg.ToString("0") + " (сила сейчас " + str.ToString("0") + ").\n" +
                        "Каждый удар — волна 90° перед героем, каждая волна дальше:\n" +
                        "волна N = дальность×(1 + 0.5×N): " + (range * 1.5f).ToString("0.0") + " … " + (range * (1f + 0.5f * lvl)).ToString("0.0") + " м\n" +
@@ -822,6 +832,7 @@ public class HeroBottomPanelUI : MonoBehaviour
                     : "Урон сейчас: 50 + сила×" + sM[i].ToString("0.#") + " + выносливость×" + eM[i].ToString("0.#") +
                       " = " + (50f + sM[i] * str + eM[i] * (hero != null ? hero.endurance : 0f)).ToString("0") + " (сила " + str.ToString("0") + ", вын. " + (hero != null ? hero.endurance : 0f).ToString("0") + ").\n";
                 return "Активный, горячая клавиша 2. Перезарядка " + skills.shieldBlastCooldown + " c (1 мин 20 с).\n" +
+                       "Мана за каст: " + skills.GetManaCost(id).ToString("0") + " (сейчас маны: " + (hero != null ? hero.currentMana.ToString("0") : "?") + ").\n" +
                        statsLine +
                        "Радиус волны: +{(600,800,1000,1200,1500)}% к дальности атаки → сейчас " +
                        (range * rM[i]).ToString("0.0") + " м (дальность " + range.ToString("0.0") + " м).\n" +
