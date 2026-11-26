@@ -41,7 +41,7 @@ public class NeutralFactionTag : MonoBehaviour
     [Header("Тир (1..5)")]
     [Tooltip("Тир 1 = без контура (оригинал), 2 и выше — ТОЛЬКО контур выбранного цвета, заливка не трогается (Об.33). Цвета контура: 2 = жёлтый, 3 = оранжевый, 4 = красный, 5 = ярко-красный. Каждый тир выше 1 повышает ВСЕ характеристики КРОМЕ скорости атаки и скорости передвижения ×2 от изначальных значений инспектора.")]
     [Range(1, 5)] public int tier = 1;
-    [Tooltip("Толщина тирового контура в ЕДИНИЦАХ МЕША (Об.33): у мелких моделей из mesh2motion кости крошечные, подбирайте вручную. 0 = контур выключен.")]
+    [Tooltip("Толщина контура как ДОЛЯ от самого длинного размера меша (Об.33): 0.02 = 2% длины тела. Масштабируется под модель автоматически (по bounds меша), вручную подбирать не нужно. Не видно контур — увеличьте, раздуло юнита в пузырь — уменьшите. 0 = контур выключен.")]
     [Min(0f)] public float tierOutlineWidth = 0.02f;
 
     [Header("Респавн (свой таймер, своя точка)")]
@@ -74,8 +74,7 @@ public class NeutralFactionTag : MonoBehaviour
     // ОБНОВЛЕНИЕ 33: контур тира вместо полной заливки
     public const string OutlineShaderName = "Andron/TierOutline";
     private Dictionary<Renderer, Material[]> originalMaterials; // снимок исходных материалов (делается до первой окраски)
-    private Material outlineMaterial;                            // кэш контурного материала текущего тира
-    private int outlineMaterialTier = -1;
+    private Dictionary<string, Material> outlineMaterialCache = new Dictionary<string, Material>(); // кэш контурных материалов по (тир:ширина)
 
     // ==================== ЖИЗНЕННЫЙ ЦИКЛ ====================
 
@@ -209,7 +208,7 @@ public class NeutralFactionTag : MonoBehaviour
                     continue;
                 }
 
-                Material outline = GetOutlineMaterial(tier);
+                Material outline = GetOutlineMaterial(tier, GetOutlineRelativeWidth(r));
                 if (outline == null)
                 {
                     r.sharedMaterials = originalMaterials[r];
@@ -228,9 +227,29 @@ public class NeutralFactionTag : MonoBehaviour
     }
 
     /// <summary>Контурный материал (кэш на текущий тир). null — шейдер не найден (не попал в сборку/не скомпилировался).</summary>
-    private Material GetOutlineMaterial(int t)
+    /// <summary>Границы меша в ЛОКАЛЬНЫХ единицах меша (не мировых!) — для автомасштаба контура.</summary>
+    private Bounds GetMeshLocalBounds(Renderer r)
     {
-        if (outlineMaterial != null && outlineMaterialTier == t) return outlineMaterial;
+        var smr = r as SkinnedMeshRenderer;
+        if (smr != null && smr.sharedMesh != null) return smr.sharedMesh.bounds;
+        var mf = r.GetComponent<MeshFilter>();
+        if (mf != null && mf.sharedMesh != null) return mf.sharedMesh.bounds;
+        return new Bounds(Vector3.zero, Vector3.zero);
+    }
+
+    /// <summary>Ширина контура = tierOutlineWidth × самый длинный размер меша (0.02 = 2% длины тела): одинаковая на глаз толщина у любых моделей.</summary>
+    private float GetOutlineRelativeWidth(Renderer r)
+    {
+        Bounds b = GetMeshLocalBounds(r);
+        float maxDim = Mathf.Max(b.size.x, Mathf.Max(b.size.y, b.size.z));
+        return maxDim > 0.0001f ? tierOutlineWidth * maxDim : tierOutlineWidth;
+    }
+
+    /// <summary>Контурный материал (кэш по тиру и ширине). null — шейдер не найден (не попал в проект/сборку).</summary>
+    private Material GetOutlineMaterial(int t, float width)
+    {
+        string key = $"{t}:{width:F4}";
+        if (outlineMaterialCache.TryGetValue(key, out var cached) && cached != null) return cached;
 
         var shader = Shader.Find(OutlineShaderName);
         if (shader == null)
@@ -239,11 +258,11 @@ public class NeutralFactionTag : MonoBehaviour
             return null;
         }
 
-        outlineMaterial = new Material(shader);
-        outlineMaterial.SetColor("_OutlineColor", TierColor(t));
-        outlineMaterial.SetFloat("_OutlineWidth", tierOutlineWidth);
-        outlineMaterialTier = t;
-        return outlineMaterial;
+        var mat = new Material(shader);
+        mat.SetColor("_OutlineColor", TierColor(t));
+        mat.SetFloat("_OutlineWidth", width);
+        outlineMaterialCache[key] = mat;
+        return mat;
     }
 
     // ==================== СМЕРТЬ: ДРОП + БОСС УСИЛИВАЕТ ФРАКЦИЮ + РЕСПАВН ====================
