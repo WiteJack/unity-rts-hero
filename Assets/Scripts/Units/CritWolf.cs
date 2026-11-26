@@ -174,6 +174,20 @@ public class CritWolf : MonoBehaviour, IAttackHitInterceptor
         lightRoutine = null;
     }
 
+    /// <summary>Зеркало BattleAI.IsTargetDead (там метод приватный): цель мертва?</summary>
+    private static bool IsTargetDead(Transform target)
+    {
+        var tHero = target.GetComponent<HeroStats>();
+        if (tHero == null) tHero = target.GetComponentInParent<HeroStats>();
+        if (tHero != null) return tHero.isDead;
+
+        var tUnit = target.GetComponent<UnitStats>();
+        if (tUnit == null) tUnit = target.GetComponentInParent<UnitStats>();
+        if (tUnit != null) return tUnit.isDead;
+
+        return true;
+    }
+
     /// <summary>Поиск среди всех потомков ВМЕСТЕ с выключенными (обычный Find не видит деактивированных детей).</summary>
     private Transform FindCritLightObject()
     {
