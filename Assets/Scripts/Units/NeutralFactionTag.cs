@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
@@ -12,8 +13,11 @@ using UnityEngine.AI;
 ///    Уникальные боссы со своей моделькой — scale руками, повторного ×1.3 не будет.
 ///  - Респавн: каждый нейтрал несёт СВОЙ таймер — после смерти появляется на ТОЙ ЖЕ точке (1 мин 30 с по умолчанию).
 ///    Никаких областей/составов — расставил префабы по карте и всё.
-///  - Тир (1..5): переход тир→тир (после убийства босса фракции) перекрашивает модельку:
-///    тир 1 = оригинал, 2 = жёлтый, 3 = оранжевый, 4 = красный, 5 = ярко-красный.
+///  - Тир (1..5): переход тир→тир (после убийства босса фракции) помечает модельку КОНТУРОМ цвета тира (ОБНОВЛЕНИЕ 33,
+///    воля владельца: НЕ полная заливка — только очертания, шерсть остаётся натуральной):
+///    тир 1 = без контура, 2 = жёлтый, 3 = оранжевый, 4 = красный, 5 = ярко-красный.
+///    Реализация: шейдер Andron/TierOutline (Assets/Shaders/TierOutline.shader) вторым слотом материалов
+///    (hull outline: вывернутые треугольники, выдавленные вдоль нормалей); исходные материалы запоминаются и восстанавливаются.
 ///    Каждый новый тир повышает ВСЕ характеристики КРОМЕ скорости атаки и скорости передвижения ×2
 ///    ОТ ИЗНАЧАЛЬНЫХ значений инспектора (кабольд 300 HP → 600 → 1200…; так же атака, дальность, защита, реген).
 ///  - Дроп: при смерти сундучок со случайной вещью (цвет по тиру) + золото; у босса — золото побольше.
@@ -35,8 +39,10 @@ public class NeutralFactionTag : MonoBehaviour
     public bool isBoss = false;
 
     [Header("Тир (1..5)")]
-    [Tooltip("Тир 1 = оригинальная раскраска, 2 = жёлтый, 3 = оранжевый, 4 = красный, 5 = ярко-красный. Каждый тир выше 1 повышает ВСЕ характеристики КРОМЕ скорости атаки и скорости передвижения ×2 от изначальных значений инспектора.")]
+    [Tooltip("Тир 1 = без контура (оригинал), 2 и выше — ТОЛЬКО контур выбранного цвета, заливка не трогается (Об.33). Цвета контура: 2 = жёлтый, 3 = оранжевый, 4 = красный, 5 = ярко-красный. Каждый тир выше 1 повышает ВСЕ характеристики КРОМЕ скорости атаки и скорости передвижения ×2 от изначальных значений инспектора.")]
     [Range(1, 5)] public int tier = 1;
+    [Tooltip("Толщина тирового контура в ЕДИНИЦАХ МЕША (Об.33): у мелких моделей из mesh2motion кости крошечные, подбирайте вручную. 0 = контур выключен.")]
+    [Min(0f)] public float tierOutlineWidth = 0.02f;
 
     [Header("Респавн (свой таймер, своя точка)")]
     [Tooltip("Секунд до возрождения на СВОЕЙ точке после смерти (диздок: 1 мин 30 с = 90)")]
@@ -64,6 +70,12 @@ public class NeutralFactionTag : MonoBehaviour
     private bool deathHandled = false;
     private Renderer[] hiddenRenderers;
     private Collider[] hiddenColliders;
+
+    // ОБНОВЛЕНИЕ 33: контур тира вместо полной заливки
+    public const string OutlineShaderName = "Andron/TierOutline";
+    private Dictionary<Renderer, Material[]> originalMaterials; // снимок исходных материалов (делается до первой окраски)
+    private Material outlineMaterial;                            // кэш контурного материала текущего тира
+    private int outlineMaterialTier = -1;
 
     // ==================== ЖИЗНЕННЫЙ ЦИКЛ ====================
 
@@ -152,9 +164,11 @@ public class NeutralFactionTag : MonoBehaviour
         if (tier > 1) Debug.Log($"[НЕЙТРАЛ] {gameObject.name}: тир {tier} → HP {stats.maxHP:0}, атака {stats.baseDamage:0}, защита {stats.defense:0}, реген {stats.hpRegenPerSecond:0.#}/с (×{mult:0.#} от изначальных). Скорость атаки и передвижения БЕЗ изменений (диздок).");
     }
 
-    // ==================== ТИРЫ: ПЕРЕКРАСКА МОДЕЛЬКИ ====================
+    // ==================== ТИРЫ: КОНТУР ЦВЕТА ТИРА (ОБНОВЛЕНИЕ 33, вместо полной заливки) ====================
 
-    /// <summary>Тир 1 = оригинал (ничего не трогаем), 2 = жёлтый, 3 = оранжевый, 4 = красный, 5 = ярко-красный.</summary>
+    /// <summary>Тир 1 = без контура (оригинал), 2 = жёлтый, 3 = оранжевый, 4 = красный, 5 = ярко-красный.
+    /// Базовые материалы НЕ перекрашиваются — снимок исходных делается до первой окраски и всегда восстанавливается,
+    /// контур добавляется/снимается вторым слотом материалов.</summary>
     public static Color TierColor(int t)
     {
         switch (t)
@@ -169,25 +183,67 @@ public class NeutralFactionTag : MonoBehaviour
 
     public void RecolorByTier()
     {
+        int contoured = 0;
         var renderers = GetComponentsInChildren<Renderer>(true);
-        int painted = 0;
         if (renderers != null)
         {
+            if (originalMaterials == null) originalMaterials = new Dictionary<Renderer, Material[]>();
+
             foreach (var r in renderers)
             {
                 if (r == null || r is ParticleSystemRenderer) continue;
-                int baseColorId = Shader.PropertyToID("_BaseColor");
-                int colorId = Shader.PropertyToID("_Color");
-                foreach (var m in r.materials)
+
+                // снимок оригинала (один раз, до первой окраски); отфильтровываем старые контуры — чтобы не наращивать слоты
+                if (!originalMaterials.ContainsKey(r))
                 {
-                    if (m == null) continue;
-                    if (m.HasProperty(baseColorId)) m.SetColor(baseColorId, TierColor(tier));
-                    else if (m.HasProperty(colorId)) m.SetColor(colorId, TierColor(tier));
-                    painted++;
+                    var snapshot = new List<Material>();
+                    foreach (var m in r.sharedMaterials)
+                        if (m == null || m.shader == null || m.shader.name != OutlineShaderName)
+                            snapshot.Add(m);
+                    originalMaterials[r] = snapshot.ToArray();
                 }
+
+                if (tier <= 1)
+                {
+                    r.sharedMaterials = originalMaterials[r]; // тир 1 — оригинал без контура
+                    continue;
+                }
+
+                Material outline = GetOutlineMaterial(tier);
+                if (outline == null)
+                {
+                    r.sharedMaterials = originalMaterials[r];
+                    continue; // причина отказа уже в логе (GetOutlineMaterial)
+                }
+
+                var baseMats = originalMaterials[r];
+                var withOutline = new Material[baseMats.Length + 1];
+                for (int i = 0; i < baseMats.Length; i++) withOutline[i] = baseMats[i];
+                withOutline[baseMats.Length] = outline;
+                r.sharedMaterials = withOutline;
+                contoured++;
             }
         }
-        Debug.Log($"[НЕЙТРАЛ] {gameObject.name}: перекраска по тиру {tier} ({(tier == 1 ? "оригинал" : TierColor(tier).ToString("F2"))}), материалов затронуто: {painted}.");
+        Debug.Log($"[НЕЙТРАЛ] {gameObject.name}: тир {tier} → контур {(tier <= 1 ? "нет (оригинал)" : TierColor(tier).ToString("F2"))}, рендереров с контуром: {contoured} (базовый материал не менялся — Обновление 33).");
+    }
+
+    /// <summary>Контурный материал (кэш на текущий тир). null — шейдер не найден (не попал в сборку/не скомпилировался).</summary>
+    private Material GetOutlineMaterial(int t)
+    {
+        if (outlineMaterial != null && outlineMaterialTier == t) return outlineMaterial;
+
+        var shader = Shader.Find(OutlineShaderName);
+        if (shader == null)
+        {
+            Debug.Log($"[НЕЙТРАЛ] {gameObject.name}: отказ контура тира — шейдер «{OutlineShaderName}» не найден (проверь, что Assets/Shaders/TierOutline.shader в проекте и URP не режет шейдер при сборке).");
+            return null;
+        }
+
+        outlineMaterial = new Material(shader);
+        outlineMaterial.SetColor("_OutlineColor", TierColor(t));
+        outlineMaterial.SetFloat("_OutlineWidth", tierOutlineWidth);
+        outlineMaterialTier = t;
+        return outlineMaterial;
     }
 
     // ==================== СМЕРТЬ: ДРОП + БОСС УСИЛИВАЕТ ФРАКЦИЮ + РЕСПАВН ====================
@@ -273,7 +329,20 @@ public class NeutralFactionTag : MonoBehaviour
         if (agent != null)
         {
             agent.enabled = true;
-            if (agent.isOnNavMesh) agent.Warp(baseSpawnPos);
+            agent.isStopped = false; // UnitStats.Die() ставит isStopped=true, без сброса волк стоит как вкопанный
+            // защита: точка респавна могла оказаться вне NavMesh (двинулое место после гибели, правки уровня) — ищем ближайший узел и варп туда
+            if (!agent.isOnNavMesh)
+            {
+                if (NavMesh.SamplePosition(baseSpawnPos, out var hit, 2f, NavMesh.AllAreas))
+                {
+                    agent.Warp(hit.position);
+                    Debug.Log($"[НЕЙТРАЛ] {gameObject.name}: точка респавна была вне NavMesh, варп к ближайшему узлу ({hit.position}).");
+                }
+                else
+                {
+                    Debug.LogWarning($"[НЕЙТРАЛ] {gameObject.name}: агент НЕ на NavMesh — точка респавна и зона 2 м вокруг не на NavMesh, юнит может не ходить.");
+                }
+            }
         }
 
         SetColliders(hiddenColliders, true);
@@ -289,8 +358,11 @@ public class NeutralFactionTag : MonoBehaviour
         var anim = GetComponentInChildren<Animator>(true);
         if (anim != null)
         {
-            anim.ResetTrigger("OnDeath");
-            anim.CrossFade("Idle", 0.1f);
+            anim.ResetTrigger("OnDeath"); // залипший триггер смерти мог снова уложить волка сразу после респавна
+            anim.ResetTrigger("OnAttack");
+            anim.Rebind();   // жёсткий сброс машины состояний: CrossFade("Idle") молча не срабатывал, если стейт не назван "Idle" — волк оставался в позе трупа и не атаковал
+            anim.Play("Idle", 0, 0f);
+            Debug.Log($"[НЕЙТРАЛ] {gameObject.name}: аниматор сброшен (Rebind + Idle) — фикс воскресания в позе трупа (Об.33).");
         }
 
         deathHandled = false;
