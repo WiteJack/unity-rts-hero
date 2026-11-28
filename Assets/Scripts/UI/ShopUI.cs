@@ -80,6 +80,14 @@ public class ShopUI : MonoBehaviour
         panel.anchoredPosition = new Vector2(-12f, 170f); // правый нижний угол, ВЫШЕ нижней панели героя
         panel.sizeDelta = new Vector2(width, height);
 
+        // ОБНОВЛЕНИЕ 38: отступ 5% от правого и нижнего края экрана (считается от ТЕКУЩЕГО разрешения),
+        // панель держится НАД нижней панелью героя; переприменяется при смене разрешения (UIMarginFitter).
+        var marginFitter = gameObject.AddComponent<UIMarginFitter>();
+        marginFitter.rightMargin = UIMargins.InsetFraction;
+        marginFitter.bottomMargin = UIMargins.InsetFraction;
+        marginFitter.stackAboveBottomStrip = true;
+        marginFitter.Apply();
+
         // Фон панели — чёрный полупрозрачный (по скрину владельца)
         var bg = gameObject.AddComponent<Image>();
         bg.color = new Color(0.04f, 0.04f, 0.05f, 0.92f);

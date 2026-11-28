@@ -92,6 +92,14 @@ public class TransmuteUI : MonoBehaviour
         panel.anchoredPosition = new Vector2(-12f, 478f); // ВЫШЕ панели магазина (магазин ~296px от 170)
         panel.sizeDelta = new Vector2(width, height);
 
+        // ОБНОВЛЕНИЕ 38: отступ 5% от правого и нижнего края экрана, панель держится НАД магазином
+        // (высота магазина пересчитывается из его canvas.scaleFactor); переприменяется при смене разрешения.
+        var marginFitter = gameObject.AddComponent<UIMarginFitter>();
+        marginFitter.rightMargin = UIMargins.InsetFraction;
+        marginFitter.bottomMargin = UIMargins.InsetFraction;
+        marginFitter.stackAboveShop = true;
+        marginFitter.Apply();
+
         // Фон — чёрный полупрозрачный (как у магазина)
         var bg = gameObject.AddComponent<Image>();
         bg.color = new Color(0.04f, 0.04f, 0.05f, 0.92f);

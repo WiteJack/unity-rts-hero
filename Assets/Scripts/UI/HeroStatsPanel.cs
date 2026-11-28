@@ -148,6 +148,13 @@ public class HeroStatsPanel : MonoBehaviour
         panelRect.anchoredPosition = panelOffset;
         panelRect.sizeDelta = new Vector2(panelWidth, panelHeight);
 
+        // ОБНОВЛЕНИЕ 38: панель характеристик — 5% от низа экрана, стыкуется НАД полосками героя;
+        // переприменяется при смене разрешения и масштаба канваса (UIMarginFitter).
+        var marginFitter = panelRect.gameObject.AddComponent<UIMarginFitter>();
+        marginFitter.bottomMargin = UIMargins.InsetFraction;
+        marginFitter.stackAboveHeroBars = true;
+        marginFitter.Apply();
+
         Image panelImage = panelObj.AddComponent<Image>();
         panelImage.color = panelColor;
         panelImage.raycastTarget = false; // не перекрываем клики (RTS-управление)

@@ -50,6 +50,9 @@ public class HeroBottomPanelUI : MonoBehaviour
     [Header("Контейнер: скиллы → атрибуты → ун. артефакт → ун. шмот → обычный шмот")]
     [Tooltip("Сдвиг контейнера от левого низа (ставится правее бара характеристик)")]
     public Vector2 containerOffset = new Vector2(270f, 20f);
+
+    /// <summary>Корневой RectTransform полосы (HeroBottomPanel_Root); заполняется в BuildPanel — нужен стекингу других панелей (Обновление 38).</summary>
+    public RectTransform RootRect { get; private set; }
     [Tooltip("Зазор между секциями контейнера (скиллы / атрибуты / шмот)")]
     public float sectionGap = 30f;
     public float colWidth = 200f;
@@ -186,6 +189,12 @@ public class HeroBottomPanelUI : MonoBehaviour
         root.pivot = new Vector2(0.5f, 0f);
         root.anchoredPosition = Vector2.zero;
         root.sizeDelta = new Vector2(0f, 230f);
+        RootRect = root; // для стекинга магазина над полосой (Обновление 38)
+
+        // ОБНОВЛЕНИЕ 38: полоса держится на отступе 5% от низа экрана при любом разрешении
+        var rootFitter = rootGO.AddComponent<UIMarginFitter>();
+        rootFitter.bottomMargin = UIMargins.InsetFraction;
+        rootFitter.Apply();
 
         // ---------- ОБНОВЛЕНИЕ 20: отдельный бар ХАРАКТЕРИСТИК слева снизу ----------
         BuildCharacteristicsBar(canvas);
@@ -266,6 +275,12 @@ public class HeroBottomPanelUI : MonoBehaviour
         barRect.pivot = new Vector2(0f, 0f);
         barRect.anchoredPosition = charPanelOffset;
         barRect.sizeDelta = new Vector2(colWidth + 20f, colHeight + 20f);
+
+        // ОБНОВЛЕНИЕ 38: бар характеристик — 5% от левого и нижнего края экрана
+        var barFitter = barGO.AddComponent<UIMarginFitter>();
+        barFitter.leftMargin = UIMargins.InsetFraction;
+        barFitter.bottomMargin = UIMargins.InsetFraction;
+        barFitter.Apply();
 
         // лёгкий фон панели (клики RTS проходят насквозь)
         var bg = barGO.AddComponent<Image>();

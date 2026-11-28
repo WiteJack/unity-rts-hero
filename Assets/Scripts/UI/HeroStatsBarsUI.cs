@@ -32,6 +32,9 @@ public class HeroStatsBarsUI : MonoBehaviour
     [Tooltip("Ширина зоны подписей справа от полосы опыта (уровень + поинты)")]
     public float labelWidth = 130f;
 
+    /// <summary>Корневой RectTransform блока полосок; заполняется в BuildBars — нужен стекингу панели характеристик (Обновление 38).</summary>
+    public RectTransform RootRect { get; private set; }
+
     [Header("Цвета (цветовое кодирование из AGENTS.md)")]
     public Color hpColor = new Color(1f, 0.42f, 0.65f);      // розовый — HP
     public Color manaColor = new Color(0.48f, 0.56f, 0.71f); // сизый — мана
@@ -177,6 +180,12 @@ public class HeroStatsBarsUI : MonoBehaviour
         rootRect.pivot = new Vector2(0.5f, 0f);
         rootRect.anchoredPosition = barsOffset;
         rootRect.sizeDelta = new Vector2(barWidth * 2f + barGap + labelWidth, barHeight * 2f + barGap);
+        RootRect = rootRect; // для стекинга панели характеристик над полосками (Обновление 38)
+
+        // ОБНОВЛЕНИЕ 38: полоски — 5% от низа экрана при любом разрешении
+        var marginFitter = rootObj.AddComponent<UIMarginFitter>();
+        marginFitter.bottomMargin = UIMargins.InsetFraction;
+        marginFitter.Apply();
 
         // Ряд 1 (верхний): HP слева, мана справа (как на мокапе).
         // ВАЖНО: дети якорены к ВЕРХУ контейнера с pivot сверху — положительный Y
