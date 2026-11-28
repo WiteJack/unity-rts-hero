@@ -23,6 +23,15 @@ public class RtsCameraController : MonoBehaviour
 
     [Header("Множитель ускорения (SHIFT)")]
     public float shiftMultiplier = 2f;
+    [Header("Перетаскивание камеры мышью (drag-pan, как в RTS)")]
+    [Tooltip("Зажать ЛКМ или колёсико (средняя кнопка) и тянуть — камера едет за мышью, как в классических RTS. Колесо-зум и ПКМ-приказы герою не затрагиваются.")]
+    public bool enableDragPanning = true;
+    [Tooltip("Перетаскивать камеру зажатой ЛЕВОЙ кнопкой мыши (ПКМ занята приказами герою).")]
+    public bool dragWithLeftMouse = true;
+    [Tooltip("Перетаскивать камеру зажатым КОЛЕСИКОМ (средняя кнопка мыши).")]
+    public bool dragWithMiddleMouse = true;
+    [Tooltip("Скорость перетаскивания: 1 = скорость от высоты камеры (чем дальше зум, тем быстрее пан), 2 = вдвое быстрее, 0.5 = вдвое медленнее.")]
+    public float dragSensitivity = 1f;
 
     [Header("Смерть и возрождение героя (Обновление 34)")]
     [Tooltip("СМЕРТЬ ГЕРОЯ: если риг камеры или сама камера вложены в героя (камера внутри префаба героя), трупная анимация смерти трясёт камеру, а телепорт респавна уносит её через карту. При смерти героя камера автоматически отцепляется от героя и становится чистым фриплеем.")]
@@ -221,8 +230,45 @@ public class RtsCameraController : MonoBehaviour
         return false;
     }
 
+    /// <summary>Активно ли перетаскивание камеры мышью (зажата ЛКМ или колёсико) — Обновление 36.</summary>
+    private bool IsDragActive()
+    {
+        if (!enableDragPanning || Mouse.current == null) return false;
+        return (dragWithLeftMouse && Mouse.current.leftButton.isPressed)
+            || (dragWithMiddleMouse && Mouse.current.middleButton.isPressed);
+    }
+
     void Update()
     {
+        // 0. ПЕРЕТАСКИВАНИЕ КАМЕРЫ (drag-pan, как в RTS, Обновление 36): зажатая ЛКМ или колёсико —
+        // тянем карту мышью («хватай и тяни»: мышь вправо — камера едет влево, земля «прилипает» к курсору).
+        // Размещено ДО проверки клавиатуры: drag клавиатуры не требует и работает даже без неё.
+        if (IsDragActive())
+        {
+            Vector2 mouseDelta = Mouse.current.delta.ReadValue();
+            if (mouseDelta.sqrMagnitude > 0.01f)
+            {
+                // Масштаб «мировых единиц на пиксель» от высоты камеры: чем выше зум, тем быстрее пан —
+                // ощущается как в RTS. FOV берём у Camera.main, высоту — у самой камеры (дочерней от рига).
+                float worldPerPixel = 0.02f;
+                var dragCam = Camera.main;
+                if (dragCam != null)
+                {
+                    float fovRad = dragCam.fieldOfView * Mathf.Deg2Rad;
+                    worldPerPixel = (2f * Mathf.Max(1f, dragCam.transform.position.y) * Mathf.Tan(fovRad * 0.5f)) / Mathf.Max(1, Screen.height);
+                }
+
+                // «Хватай и тяни»: тянем мышь вправо/вверх — мир уезжает за курсором, камера едет влево/назад
+                Vector3 dragMove = (-transform.right * mouseDelta.x - transform.forward * mouseDelta.y) * (worldPerPixel * dragSensitivity);
+                dragMove.y = 0f;
+                Vector3 dragPos = transform.position + dragMove;
+
+                // Те же жёсткие границы карты, что и у WASD
+                dragPos.x = Mathf.Clamp(dragPos.x, minX, maxX);
+                dragPos.z = Mathf.Clamp(dragPos.z, minZ, maxZ);
+                transform.position = dragPos;
+            }
+        }
         if (Keyboard.current == null) return;
 
         // 1. Проверяем Shift для ускорения
@@ -240,7 +286,7 @@ public class RtsCameraController : MonoBehaviour
         if (Keyboard.current[Key.D].isPressed || Keyboard.current[Key.RightArrow].isPressed) moveDirection += transform.right;
 
         // Движение при наведении мыши на края экрана (как в Warcraft 3)
-        if (enableEdgeScrolling && Mouse.current != null && Application.isFocused)
+        if (enableEdgeScrolling && Mouse.current != null && Application.isFocused && !IsDragActive())
         {
             Vector2 mousePos = Mouse.current.position.ReadValue();
 
