@@ -151,6 +151,7 @@ public class HeroStatsPanel : MonoBehaviour
         // ОБНОВЛЕНИЕ 38: панель характеристик — 5% от низа экрана, стыкуется НАД полосками героя;
         // переприменяется при смене разрешения и масштаба канваса (UIMarginFitter).
         var marginFitter = panelRect.gameObject.AddComponent<UIMarginFitter>();
+        marginFitter.extraOffset = panelOffset; // ручное смещение из инспектора поверх отступа 5% (Обновление 38)
         marginFitter.bottomMargin = UIMargins.InsetFraction;
         marginFitter.stackAboveHeroBars = true;
         marginFitter.Apply();

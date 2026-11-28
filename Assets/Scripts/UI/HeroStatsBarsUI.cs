@@ -182,8 +182,10 @@ public class HeroStatsBarsUI : MonoBehaviour
         rootRect.sizeDelta = new Vector2(barWidth * 2f + barGap + labelWidth, barHeight * 2f + barGap);
         RootRect = rootRect; // для стекинга панели характеристик над полосками (Обновление 38)
 
-        // ОБНОВЛЕНИЕ 38: полоски — 5% от низа экрана при любом разрешении
+        // ОБНОВЛЕНИЕ 38 (фикс): полоски — 5% от низа экрана, а barsOffset из инспектора
+        // работает как ДОПОЛНИТЕЛЬНОЕ смещение поверх отступа (Y:500 = на 500 выше отступа).
         var marginFitter = rootObj.AddComponent<UIMarginFitter>();
+        marginFitter.extraOffset = barsOffset;
         marginFitter.bottomMargin = UIMargins.InsetFraction;
         marginFitter.Apply();
 

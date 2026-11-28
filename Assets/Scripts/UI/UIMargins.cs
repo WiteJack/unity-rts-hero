@@ -63,6 +63,9 @@ public class UIMarginFitter : MonoBehaviour
     [Tooltip("Зазор между панелями при стыковке, в пикселях экрана.")]
     public float stackGapPx = 8f;
 
+    [Tooltip("Дополнительное смещение ПОВЕРХ отступа 5% (старые поля panelOffset/barsOffset из инспектора), в единицах канваса. Положительный Y — вверх. Применяется на пристыкованных осях.")]
+    public Vector2 extraOffset = Vector2.zero;
+
     [Tooltip("Логировать первое применение отступа ([UI]).")]
     public bool logApply = false;
 
@@ -112,18 +115,18 @@ public class UIMarginFitter : MonoBehaviour
         lastH = Screen.height;
         lastScale = sf;
 
-        // ---------- стекинг: высота нижнего блока в ПИКСЕЛЯХ экрана ----------
-        float stackPx = 0f;
+        // ---------- стекинг: ВЕРХНИЙ край нижнего блока в ПИКСЕЛЯХ экрана ----------
+        float stackTopPx = 0f;
         bool anyStack = stackAboveShop || stackAboveBottomStrip || stackAboveHeroBars;
 
         if (stackAboveShop && ShopUI.Instance != null)
-            stackPx = Mathf.Max(stackPx, HeightPx(ShopUI.Instance.transform as RectTransform));
+            stackTopPx = Mathf.Max(stackTopPx, TopEdgePx(ShopUI.Instance.transform as RectTransform));
 
         if (stackAboveBottomStrip)
         {
             var strip = FindAnyObjectByType(typeof(HeroBottomPanelUI)) as HeroBottomPanelUI;
             if (strip != null)
-                stackPx = Mathf.Max(stackPx, HeightPx(strip.RootRect));
+                stackTopPx = Mathf.Max(stackTopPx, TopEdgePx(strip.RootRect));
         }
 
         if (stackAboveHeroBars)
@@ -131,10 +134,10 @@ public class UIMarginFitter : MonoBehaviour
             if (barsCache == null)
                 barsCache = FindAnyObjectByType(typeof(HeroStatsBarsUI)) as HeroStatsBarsUI;
             if (barsCache != null)
-                stackPx = Mathf.Max(stackPx, HeightPx(barsCache.RootRect));
+                stackTopPx = Mathf.Max(stackTopPx, TopEdgePx(barsCache.RootRect));
         }
 
-        stackUnresolved = anyStack && stackPx <= 0f;
+        stackUnresolved = anyStack && stackTopPx <= 0f;
 
         // ---------- применяем отступ только к пристыкованным краям ----------
         float x = rt.anchoredPosition.x;
@@ -144,17 +147,19 @@ public class UIMarginFitter : MonoBehaviour
         bool vDocked = Mathf.Approximately(rt.anchorMin.y, rt.anchorMax.y);
 
         if (hDocked && rightMargin > 0f && rt.anchorMin.x >= 0.5f)
-            x = -Screen.width * rightMargin / sf;
+            x = -(Screen.width * rightMargin - extraOffset.x) / sf;
         else if (hDocked && leftMargin > 0f && rt.anchorMin.x < 0.5f)
-            x = Screen.width * leftMargin / sf;
+            x = (Screen.width * leftMargin + extraOffset.x) / sf;
 
         if (vDocked && topMargin > 0f && rt.anchorMin.y >= 0.5f)
-            y = -Screen.height * topMargin / sf;
+            y = -(Screen.height * topMargin - extraOffset.y) / sf;
         else if (vDocked && bottomMargin > 0f && rt.anchorMin.y < 0.5f)
         {
-            float marginPx = Screen.height * bottomMargin;
-            if (stackPx > 0f) marginPx += stackPx + stackGapPx;
-            y = marginPx / sf;
+            // низ панели = отступ 5% + ручное смещение из инспектора (extra в канвас-юнитах → px);
+            // при стекинге низ не опускается НИЖЕ верхнего края нижней панели + зазор
+            float bottomPx = Screen.height * bottomMargin + extraOffset.y * sf;
+            if (stackTopPx > 0f) bottomPx = Mathf.Max(bottomPx, stackTopPx + stackGapPx);
+            y = bottomPx / sf;
         }
 
         rt.anchoredPosition = new Vector2(x, y);
@@ -164,7 +169,7 @@ public class UIMarginFitter : MonoBehaviour
             loggedOnce = true;
             Debug.Log("[UI] " + name + ": отступ " + Mathf.RoundToInt(UIMargins.InsetFraction * 100f) +
                       "% от краёв экрана применён (экран " + Screen.width + "x" + Screen.height +
-                      ", scaleFactor " + sf.ToString("0.###") + ", стек снизу " + Mathf.RoundToInt(stackPx) + "px) — Обновление 38.");
+                      ", scaleFactor " + sf.ToString("0.###") + ", стек: низ по верхнему краю нижней панели " + Mathf.RoundToInt(stackTopPx) + "px) — Обновление 38.");
         }
     }
 
@@ -173,12 +178,20 @@ public class UIMarginFitter : MonoBehaviour
         return (canvas != null && canvas.scaleFactor > 0f) ? canvas.scaleFactor : 1f;
     }
 
-    /// <summary>Высота панели в ПИКСЕЛЯХ экрана: sizeDelta (канвас-юниты) × scaleFactor её канваса.</summary>
-    private static float HeightPx(RectTransform rt)
+    private static readonly Vector3[] s_corners = new Vector3[4];
+
+    /// <summary>ВЕРХНИЙ край панели в ПИКСЕЛЯХ экрана от низа (для Screen Space Overlay 1 world unit = 1 px).</summary>
+    private static float TopEdgePx(RectTransform rt)
     {
         if (rt == null) return 0f;
         var c = rt.GetComponentInParent<Canvas>();
+        if (c != null && c.renderMode == RenderMode.ScreenSpaceOverlay)
+        {
+            rt.GetWorldCorners(s_corners);
+            return s_corners[1].y; // верхний левый угол
+        }
+        // запасной вариант для не-оверлей канвасов
         float sf = (c != null && c.scaleFactor > 0f) ? c.scaleFactor : 1f;
-        return rt.sizeDelta.y * sf;
+        return rt.position.y + rt.sizeDelta.y * sf;
     }
 }
