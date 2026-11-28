@@ -21,14 +21,254 @@ public class RtsCameraController : MonoBehaviour
     public float minHeight = 1f;
     public float maxHeight = 20f;
 
-    [Header("Настройки Вращения (Q / E)")]
-    public float rotationSpeed = 60f;
-
     [Header("Множитель ускорения (SHIFT)")]
     public float shiftMultiplier = 2f;
+    [Header("Перетаскивание камеры мышью (drag-pan, как в RTS)")]
+    [Tooltip("Зажать ЛКМ или колёсико (средняя кнопка) и тянуть — камера едет за мышью, как в классических RTS. Колесо-зум и ПКМ-приказы герою не затрагиваются.")]
+    public bool enableDragPanning = true;
+    [Tooltip("Перетаскивать камеру зажатой ЛЕВОЙ кнопкой мыши (ПКМ занята приказами герою).")]
+    public bool dragWithLeftMouse = true;
+    [Tooltip("Перетаскивать камеру зажатым КОЛЕСИКОМ (средняя кнопка мыши).")]
+    public bool dragWithMiddleMouse = true;
+    [Tooltip("Скорость перетаскивания: 1 = скорость от высоты камеры (чем дальше зум, тем быстрее пан), 2 = вдвое быстрее, 0.5 = вдвое медленнее.")]
+    public float dragSensitivity = 1f;
+
+    [Header("Смерть и возрождение героя (Обновление 34)")]
+    [Tooltip("СМЕРТЬ ГЕРОЯ: если риг камеры или сама камера вложены в героя (камера внутри префаба героя), трупная анимация смерти трясёт камеру, а телепорт респавна уносит её через карту. При смерти героя камера автоматически отцепляется от героя и становится чистым фриплеем.")]
+    public bool detachCameraOnHeroDeath = true;
+    [Tooltip("ВОЗРОЖДЕНИЕ ГЕРОЯ: героя мгновенно переносит на точку респавна — камера не летит за ним, а мгновенно встаёт НАД точкой возрождения (высота и поворот камеры сохраняются). Выключите, если хотите оставить камеру на месте смерти.")]
+    public bool snapToHeroOnRespawn = true;
+    [Tooltip("Сдвиг героя за один кадр (м), который считается телепортом: при таком прыжке камера мгновенно переносится за героем. Обычный бег гораздо медленнее и камеру не двигает.")]
+    public float heroTeleportSnapDistance = 3f;
+
+    // --- Смерть/возрождение героя (Обновление 34): фикс «камера не фриплей при смерти» и «камера улетает после телепорта». ---
+    // Логика живёт ЗДЕСЬ, в контроллере камеры (решение владельца — НЕ в ClampToMap: кламп только удерживает
+    // камеру в границах карты, но не управляет режимами). Герой отслеживается через HeroRespawn.IsWaitingForRespawn.
+    private HeroRespawn heroRespawn;
+    private Transform heroTransform;
+    private bool heroWasDead = false;
+    private bool heroLookupFailedLogged = false;
+    private float nextHeroLookupTime = 0f;
+    private Vector3 lastHeroPos;
+    private bool heroPosInitialized = false;
+    private bool cameraOffsetCaptured = false;
+    private Vector3 cameraLocalOffsetAtStart;
+    private Vector3 cameraWorldOffsetAtStart;
+
+    // АВАРИЙНЫЙ жёсткий зажим КАЖДЫЙ кадр (LateUpdate). Зажим в Update удерживает только
+    // собственное движение WASD/краёв экрана. Если камеру за границы отбросил кто-то другой
+    // (фокус спавнера в GameSpawner, любой сторонний контроллер героя, сбой кадра) —
+    // LateUpdate возвращает её в рамки карты в тот же кадр, до отрисовки.
+    void LateUpdate()
+    {
+        CaptureCameraOffset();
+        HandleHeroLifeCycle();
+        // риг зажимаем вместе с высотой; Camera.main (если камера ДОЧЕРНИЙ объект рига,
+        // как на типичной схеме CameraRig -> Main Camera) — тоже: телепорт двигает именно
+        // Camera.main, и без этого камера оставалась за картой до следующего WASD.
+        // Смерть/возрождение героя обрабатываются отдельно в HandleHeroLifeCycle (Обновление 34) — здесь только границы карты.
+        ClampToMap(transform, true);
+        var mainCam = Camera.main;
+        if (mainCam != null && mainCam.transform != transform)
+            ClampToMap(mainCam.transform, false);
+    }
+
+    /// <summary>Жёсткий зажим позиции в границы карты; public — можно дёрнуть после телепорта.</summary>
+    public void ClampToMap(Transform t, bool clampHeight)
+    {
+        Vector3 p = t.position;
+        // защита от NaN (битые телепорты/варпы превращают позицию в бессмыслицу,
+        // а Clamp(NaN) = NaN — зажим молча перестаёт работать)
+        if (float.IsNaN(p.x) || float.IsNaN(p.y) || float.IsNaN(p.z))
+        {
+            t.position = new Vector3((minX + maxX) * 0.5f, (minHeight + maxHeight) * 0.5f, (minZ + maxZ) * 0.5f);
+            return;
+        }
+        float clampedX = Mathf.Clamp(p.x, minX, maxX);
+        float clampedZ = Mathf.Clamp(p.z, minZ, maxZ);
+        float clampedY = clampHeight ? Mathf.Clamp(p.y, minHeight, maxHeight) : p.y;
+        if (p.x != clampedX || p.z != clampedZ || p.y != clampedY)
+        {
+            t.position = new Vector3(clampedX, clampedY, clampedZ);
+        }
+    }
+
+    /// <summary>Слежит за смертью/возрождением героя и переключает режимы камеры (Обновление 34).</summary>
+    private void HandleHeroLifeCycle()
+    {
+        // Герой ещё не найден: ищем не чаще раза в 2 сек — спавн героя может случиться позже старта камеры
+        if (heroRespawn == null)
+        {
+            if (Time.time.CompareTo(nextHeroLookupTime) == -1) return;
+            nextHeroLookupTime = Time.time + 2f;
+            heroRespawn = FindFirstObjectByType<HeroRespawn>();
+            if (heroRespawn == null)
+            {
+                if (!heroLookupFailedLogged)
+                {
+                    Debug.LogWarning("[КАМЕРА] HeroRespawn на сцене не найден — причина: на герое нет компонента HeroRespawn или герой ещё не заспавнился. Камера не узнает о смерти/возрождении героя.");
+                    heroLookupFailedLogged = true;
+                }
+                return;
+            }
+            heroTransform = heroRespawn.transform;
+        }
+
+        bool heroDead = heroRespawn.IsWaitingForRespawn;
+
+        if (heroDead && !heroWasDead) OnHeroDiedCamera();
+        if (!heroDead && heroWasDead) OnHeroRespawnedCamera();
+
+        // ТЕЛЕПОРТ героя при жизни (скилл TeleportSystem или любой варп): герой прыгнул дальше
+        // heroTeleportSnapDistance за один кадр — риг мгновенно едет за ним. Без этого риг остаётся
+        // на старом месте, Main Camera отрывается от рига (телепорт двигает именно камеру),
+        // смещение ломается и камеру начинает зажимать у границ карты («барьер», Обновление 35).
+        if (!heroDead)
+        {
+            if (!heroPosInitialized)
+            {
+                lastHeroPos = heroTransform.position;
+                heroPosInitialized = true;
+            }
+            else
+            {
+                float jump = (heroTransform.position - lastHeroPos).magnitude;
+                if (jump.CompareTo(heroTeleportSnapDistance) == 1)
+                {
+                    transform.position = new Vector3(heroTransform.position.x, transform.position.y, heroTransform.position.z);
+                    ClampToMap(transform, true);
+                    RestoreCameraOffset();
+                    Debug.Log($"[КАМЕРА] герой телепортировался ({lastHeroPos} → {heroTransform.position}, сдвиг {jump:0.0} м) → камера перенесена за ним (Обновление 35).");
+                }
+                lastHeroPos = heroTransform.position;
+            }
+        }
+
+        heroWasDead = heroDead;
+    }
+
+    // СМЕРЬ ГЕРОЯ: камера ОБЯЗАНА стать фриплеем. Если риг или сама камера вложены в героя,
+    // анимация смерти корячит камеру («смерть ломает камеру») — отцепляем в мировых координатах.
+    private void OnHeroDiedCamera()
+    {
+        bool detached = false;
+
+        if (detachCameraOnHeroDeath && transform.parent != null)
+        {
+            transform.SetParent(null, true); // true = оставить мировую позицию и поворот как были
+            detached = true;
+        }
+
+        // Если сама камера была вложена в героя — возвращаем её под этот риг (мировая позиция сохраняется)
+        var mainCam = Camera.main;
+        if (mainCam != null && heroTransform != null && IsDescendantOf(mainCam.transform, heroTransform))
+        {
+            mainCam.transform.SetParent(transform, true);
+            detached = true;
+        }
+
+        if (detached)
+            Debug.Log("[КАМЕРА] Герой погиб → камера отцеплена от героя и переведена во фриплей (Обновление 34).");
+        else
+            Debug.Log("[КАМЕРА] Герой погиб → камера уже была фриплеем, отцеплять нечего (Обновление 34).");
+    }
+
+    // ВОЗРОЖДЕНИЕ: героя мгновенно переносит на точку респавна (HeroRespawn.RespawnNow).
+    // Если бы камера осталась привязанной к герою — её бы унесло через всю карту.
+    // Вместо этого ставим риг НАД точкой возрождения: высота и поворот камеры сохраняются.
+    private void OnHeroRespawnedCamera()
+    {
+        if (snapToHeroOnRespawn && heroTransform != null)
+        {
+            Vector3 above = new Vector3(heroTransform.position.x, transform.position.y, heroTransform.position.z);
+            transform.position = above;
+            // штатная проверка границ после переноса; сам фикс — здесь, в контроллере, не в клампе
+            ClampToMap(transform, true);
+            RestoreCameraOffset();
+            heroPosInitialized = true;
+            lastHeroPos = heroTransform.position;
+            Debug.Log($"[КАМЕРА] Герой возродился на {heroTransform.position} → камера перенесена над точкой респавна, высота/поворот сохранены (Обновление 34).");
+        }
+        else
+        {
+            Debug.Log("[КАМЕРА] Герой возродился → камера остаётся фриплеем на месте смерти (перенос отключён в инспекторе).");
+        }
+    }
+
+    // Однократный захват смещения Main Camera относительно рига (до любых телепортов)
+    private void CaptureCameraOffset()
+    {
+        if (cameraOffsetCaptured) return;
+        var mainCam = Camera.main;
+        if (mainCam == null || mainCam.transform == transform) return;
+        cameraLocalOffsetAtStart = mainCam.transform.localPosition;
+        cameraWorldOffsetAtStart = mainCam.transform.position - transform.position;
+        cameraOffsetCaptured = true;
+    }
+
+    // Возврат камеры на штатное смещение относительно рига: лечит отрыв камеры от рига,
+    // который оставляет после себя TeleportSystem (двигает Camera.main напрямую)
+    private void RestoreCameraOffset()
+    {
+        if (!cameraOffsetCaptured) CaptureCameraOffset();
+        var mainCam = Camera.main;
+        if (mainCam == null || mainCam.transform == transform) return;
+        if (mainCam.transform.parent == transform)
+            mainCam.transform.localPosition = cameraLocalOffsetAtStart;
+        else
+            mainCam.transform.position = transform.position + cameraWorldOffsetAtStart;
+    }
+
+    // Вложен ли узел в предка ancestor (для поиска камеры внутри героя)
+    private static bool IsDescendantOf(Transform node, Transform ancestor)
+    {
+        while (node != null)
+        {
+            if (node.parent == ancestor) return true;
+            node = node.parent;
+        }
+        return false;
+    }
+
+    /// <summary>Активно ли перетаскивание камеры мышью (зажата ЛКМ или колёсико) — Обновление 36.</summary>
+    private bool IsDragActive()
+    {
+        if (!enableDragPanning || Mouse.current == null) return false;
+        return (dragWithLeftMouse && Mouse.current.leftButton.isPressed)
+            || (dragWithMiddleMouse && Mouse.current.middleButton.isPressed);
+    }
 
     void Update()
     {
+        // 0. ПЕРЕТАСКИВАНИЕ КАМЕРЫ (drag-pan, как в RTS, Обновление 36): зажатая ЛКМ или колёсико —
+        // тянем карту мышью («хватай и тяни»: мышь вправо — камера едет влево, земля «прилипает» к курсору).
+        // Размещено ДО проверки клавиатуры: drag клавиатуры не требует и работает даже без неё.
+        if (IsDragActive())
+        {
+            Vector2 mouseDelta = Mouse.current.delta.ReadValue();
+            if (mouseDelta.sqrMagnitude > 0.01f)
+            {
+                // Масштаб «мировых единиц на пиксель» от высоты камеры: чем выше зум, тем быстрее пан —
+                // ощущается как в RTS. FOV берём у Camera.main, высоту — у самой камеры (дочерней от рига).
+                float worldPerPixel = 0.02f;
+                var dragCam = Camera.main;
+                if (dragCam != null)
+                {
+                    float fovRad = dragCam.fieldOfView * Mathf.Deg2Rad;
+                    worldPerPixel = (2f * Mathf.Max(1f, dragCam.transform.position.y) * Mathf.Tan(fovRad * 0.5f)) / Mathf.Max(1, Screen.height);
+                }
+
+                // «Хватай и тяни»: тянем мышь вправо/вверх — мир уезжает за курсором, камера едет влево/назад
+                Vector3 dragMove = (-transform.right * mouseDelta.x - transform.forward * mouseDelta.y) * (worldPerPixel * dragSensitivity);
+                dragMove.y = 0f;
+                Vector3 dragPos = transform.position + dragMove;
+
+                // Те же жёсткие границы карты, что и у WASD
+                dragPos.x = Mathf.Clamp(dragPos.x, minX, maxX);
+                dragPos.z = Mathf.Clamp(dragPos.z, minZ, maxZ);
+                transform.position = dragPos;
+            }
+        }
         if (Keyboard.current == null) return;
 
         // 1. Проверяем Shift для ускорения
@@ -46,7 +286,7 @@ public class RtsCameraController : MonoBehaviour
         if (Keyboard.current[Key.D].isPressed || Keyboard.current[Key.RightArrow].isPressed) moveDirection += transform.right;
 
         // Движение при наведении мыши на края экрана (как в Warcraft 3)
-        if (enableEdgeScrolling && Mouse.current != null && Application.isFocused)
+        if (enableEdgeScrolling && Mouse.current != null && Application.isFocused && !IsDragActive())
         {
             Vector2 mousePos = Mouse.current.position.ReadValue();
 
@@ -79,15 +319,8 @@ public class RtsCameraController : MonoBehaviour
         // Применяем позицию после ограничения
         transform.position = newPosition;
 
-        // 3. ВРАЩЕНИЕ (Q / E)
-        float rotationDirection = 0f;
-        if (Keyboard.current[Key.Q].isPressed) rotationDirection -= 1f;
-        if (Keyboard.current[Key.E].isPressed) rotationDirection += 1f;
-
-        if (Mathf.Abs(rotationDirection).CompareTo(0.01f) == 1)
-        {
-            transform.Rotate(Vector3.up, rotationDirection * rotationSpeed * currentMultiplier * Time.deltaTime, Space.World);
-        }
+        // 3. ВРАЩЕНИЕ УБРАНО (Обновление 35, решение владельца): с фиксированным углом косяки карты проще скрывать,
+        // а WASD всегда едет в предсказуемые стороны.
 
         // 4. ЗУМ (Колесо мыши)
         if (Mouse.current != null)

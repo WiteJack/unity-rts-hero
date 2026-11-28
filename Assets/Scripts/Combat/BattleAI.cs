@@ -16,6 +16,17 @@ public class BattleAI : MonoBehaviour
     [Tooltip("Длина клипа атаки в секундах при множителе 1.0 (подстрой под длину клипа в окне Animation)")]
     public float baseAttackClipLength = 1.5f;
 
+    [Header("Максимальная дальность удара (ОБНОВЛЕНИЕ 28)")]
+    [Tooltip("ПЕР-ЮНИТНЫЙ лимит дальности удара, м. -1 = брать лимит от инжектора UnitHitRangeInjector. Удар наносится только если цель не дальше лимита — фикс «враги бьют дальше своего радиуса».")]
+    public float maxHitDistance = -1f;
+    [Tooltip("Лимит для БЛИЖНИКОВ (юнитов без ShooterProjectileAttack), м. Задаёт UnitHitRangeInjector; действует на ВСЕХ юнитов, включая будущие спавны.")]
+    public static float defaultHitDistance = -1f;
+    [Tooltip("Лимит для ДАЛЬНИКОВ (юниты с ShooterProjectileAttack), м. Задаёт UnitHitRangeInjector.")]
+    public static float defaultRangedHitDistance = -1f;
+    [Tooltip("Писать в консоль причину каждого отменённого удара (диагностика «не бьёт»).")]
+    public bool logMissedHits = false;
+    [HideInInspector] public bool attackSuppressed = false; // ОБНОВЛЕНИЕ 28 (A1): когда true — обычные автоатаки гасятся (Ярость короля бьёт сама)
+
     private Transform currentTarget;
     private NavMeshAgent agent;
     private HeroMovement heroMovement;
@@ -25,6 +36,10 @@ public class BattleAI : MonoBehaviour
 
     private HeroStats myHeroStats;
     private UnitStats myUnitStats;
+
+    // ОБНОВЛЕНИЕ 28 (A1): перехватчики кадра удара (например, волна Ярости короля)
+    private System.Collections.Generic.List<IAttackHitInterceptor> interceptors = new System.Collections.Generic.List<IAttackHitInterceptor>();
+    private bool hasShooter; // есть ShooterProjectileAttack → юнит считается дальником
 
     void Start()
     {
@@ -43,6 +58,11 @@ public class BattleAI : MonoBehaviour
         if (myUnitStats == null) myUnitStats = GetComponentInParent<UnitStats>();
 
         myLayer = gameObject.layer;
+
+        // ОБНОВЛЕНИЕ 28: дальник или ближник (для лимита дальности) + сбор перехватчиков удара
+        hasShooter = GetComponent<ShooterProjectileAttack>() != null;
+        interceptors.AddRange(GetComponents<IAttackHitInterceptor>());
+        interceptors.AddRange(GetComponentsInChildren<IAttackHitInterceptor>());
 
         if (agent != null) agent.updateRotation = true; 
     }
@@ -87,7 +107,7 @@ public class BattleAI : MonoBehaviour
             {
                 if (agent != null && agent.isOnNavMesh && !agent.isStopped) agent.ResetPath();
                 
-                if (Time.time >= nextAttackTime)
+                if (Time.time >= nextAttackTime && !attackSuppressed) // ОБНОВЛЕНИЕ 28: автоатаки героя гасятся на время Ярости короля
                 {
                     float currentSpeed = 1f;
                     
@@ -135,6 +155,12 @@ public class BattleAI : MonoBehaviour
 
         if ((myHeroStats != null && !myHeroStats.isDead) || (myUnitStats != null && !myUnitStats.isDead))
         {
+            // ОБНОВЛЕНИЕ 28 (A1): сначала перехватчики — удар анимации может быть потрачен на волну навыка
+            for (int i = interceptors.Count - 1; i >= 0; i--)
+            {
+                if (interceptors[i] != null && interceptors[i].InterceptAttackHit()) return;
+            }
+
             ApplyDamageToTarget();
         }
     }
@@ -142,6 +168,29 @@ public class BattleAI : MonoBehaviour
     private void ApplyDamageToTarget()
     {
         if (currentTarget == null || IsTargetDead(currentTarget)) return;
+
+        // ОБНОВЛЕНИЕ 28 (A2): проверка макс. дальности удара — цель, ушедшая за лимит, урона не получает.
+        // Лимит разрешается В МОМЕНТ УДАРА из статик-полей инжектора UnitHitRangeInjector:
+        // ближники — defaultHitDistance, дальники — defaultRangedHitDistance; пер-юнитный maxHitDistance важнее.
+        float hitLimit = maxHitDistance >= 0f ? maxHitDistance : (hasShooter ? defaultRangedHitDistance : defaultHitDistance);
+        if (hitLimit >= 0f)
+        {
+            float distToTarget = Vector3.Distance(transform.position, currentTarget.position);
+            if (distToTarget > hitLimit)
+            {
+                if (logMissedHits) Debug.Log($"[ДАЛЬНОСТЬ] {gameObject.name}: цель {currentTarget.name} на {distToTarget:0.0} м — дальше лимита {hitLimit:0.0} м, удар НЕ проходит (не дотягивается).");
+                return;
+            }
+        }
+
+        // Стрелок: урон наносит летящий снаряд (как у башни), а не мгновенный удар.
+        // Если на юните есть ShooterProjectileAttack — отдаём выстрел ему и выходим.
+        var projectileShooter = GetComponent<ShooterProjectileAttack>();
+        if (projectileShooter != null && projectileShooter.enabled)
+        {
+            projectileShooter.LaunchProjectile(currentTarget);
+            return;
+        }
 
         var targetHeroStats = currentTarget.GetComponent<HeroStats>();
         if (targetHeroStats == null) targetHeroStats = currentTarget.GetComponentInParent<HeroStats>();
@@ -245,5 +294,6 @@ public class BattleAI : MonoBehaviour
         Gizmos.DrawWireSphere(transform.position, attackRange);
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(transform.position, scanRadius);
+        if (maxHitDistance >= 0f) { Gizmos.color = Color.cyan; Gizmos.DrawWireSphere(transform.position, maxHitDistance); }
     }
 }
