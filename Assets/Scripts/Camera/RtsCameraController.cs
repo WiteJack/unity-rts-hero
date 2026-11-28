@@ -21,9 +21,6 @@ public class RtsCameraController : MonoBehaviour
     public float minHeight = 1f;
     public float maxHeight = 20f;
 
-    [Header("Настройки Вращения (Q / E)")]
-    public float rotationSpeed = 60f;
-
     [Header("Множитель ускорения (SHIFT)")]
     public float shiftMultiplier = 2f;
 
@@ -32,6 +29,8 @@ public class RtsCameraController : MonoBehaviour
     public bool detachCameraOnHeroDeath = true;
     [Tooltip("ВОЗРОЖДЕНИЕ ГЕРОЯ: героя мгновенно переносит на точку респавна — камера не летит за ним, а мгновенно встаёт НАД точкой возрождения (высота и поворот камеры сохраняются). Выключите, если хотите оставить камеру на месте смерти.")]
     public bool snapToHeroOnRespawn = true;
+    [Tooltip("Сдвиг героя за один кадр (м), который считается телепортом: при таком прыжке камера мгновенно переносится за героем. Обычный бег гораздо медленнее и камеру не двигает.")]
+    public float heroTeleportSnapDistance = 3f;
 
     // --- Смерть/возрождение героя (Обновление 34): фикс «камера не фриплей при смерти» и «камера улетает после телепорта». ---
     // Логика живёт ЗДЕСЬ, в контроллере камеры (решение владельца — НЕ в ClampToMap: кламп только удерживает
@@ -41,6 +40,11 @@ public class RtsCameraController : MonoBehaviour
     private bool heroWasDead = false;
     private bool heroLookupFailedLogged = false;
     private float nextHeroLookupTime = 0f;
+    private Vector3 lastHeroPos;
+    private bool heroPosInitialized = false;
+    private bool cameraOffsetCaptured = false;
+    private Vector3 cameraLocalOffsetAtStart;
+    private Vector3 cameraWorldOffsetAtStart;
 
     // АВАРИЙНЫЙ жёсткий зажим КАЖДЫЙ кадр (LateUpdate). Зажим в Update удерживает только
     // собственное движение WASD/краёв экрана. Если камеру за границы отбросил кто-то другой
@@ -48,6 +52,7 @@ public class RtsCameraController : MonoBehaviour
     // LateUpdate возвращает её в рамки карты в тот же кадр, до отрисовки.
     void LateUpdate()
     {
+        CaptureCameraOffset();
         HandleHeroLifeCycle();
         // риг зажимаем вместе с высотой; Camera.main (если камера ДОЧЕРНИЙ объект рига,
         // как на типичной схеме CameraRig -> Main Camera) — тоже: телепорт двигает именно
@@ -105,6 +110,31 @@ public class RtsCameraController : MonoBehaviour
         if (heroDead && !heroWasDead) OnHeroDiedCamera();
         if (!heroDead && heroWasDead) OnHeroRespawnedCamera();
 
+        // ТЕЛЕПОРТ героя при жизни (скилл TeleportSystem или любой варп): герой прыгнул дальше
+        // heroTeleportSnapDistance за один кадр — риг мгновенно едет за ним. Без этого риг остаётся
+        // на старом месте, Main Camera отрывается от рига (телепорт двигает именно камеру),
+        // смещение ломается и камеру начинает зажимать у границ карты («барьер», Обновление 35).
+        if (!heroDead)
+        {
+            if (!heroPosInitialized)
+            {
+                lastHeroPos = heroTransform.position;
+                heroPosInitialized = true;
+            }
+            else
+            {
+                float jump = (heroTransform.position - lastHeroPos).magnitude;
+                if (jump.CompareTo(heroTeleportSnapDistance) == 1)
+                {
+                    transform.position = new Vector3(heroTransform.position.x, transform.position.y, heroTransform.position.z);
+                    ClampToMap(transform, true);
+                    RestoreCameraOffset();
+                    Debug.Log($"[КАМЕРА] герой телепортировался ({lastHeroPos} → {heroTransform.position}, сдвиг {jump:0.0} м) → камера перенесена за ним (Обновление 35).");
+                }
+                lastHeroPos = heroTransform.position;
+            }
+        }
+
         heroWasDead = heroDead;
     }
 
@@ -145,12 +175,39 @@ public class RtsCameraController : MonoBehaviour
             transform.position = above;
             // штатная проверка границ после переноса; сам фикс — здесь, в контроллере, не в клампе
             ClampToMap(transform, true);
+            RestoreCameraOffset();
+            heroPosInitialized = true;
+            lastHeroPos = heroTransform.position;
             Debug.Log($"[КАМЕРА] Герой возродился на {heroTransform.position} → камера перенесена над точкой респавна, высота/поворот сохранены (Обновление 34).");
         }
         else
         {
             Debug.Log("[КАМЕРА] Герой возродился → камера остаётся фриплеем на месте смерти (перенос отключён в инспекторе).");
         }
+    }
+
+    // Однократный захват смещения Main Camera относительно рига (до любых телепортов)
+    private void CaptureCameraOffset()
+    {
+        if (cameraOffsetCaptured) return;
+        var mainCam = Camera.main;
+        if (mainCam == null || mainCam.transform == transform) return;
+        cameraLocalOffsetAtStart = mainCam.transform.localPosition;
+        cameraWorldOffsetAtStart = mainCam.transform.position - transform.position;
+        cameraOffsetCaptured = true;
+    }
+
+    // Возврат камеры на штатное смещение относительно рига: лечит отрыв камеры от рига,
+    // который оставляет после себя TeleportSystem (двигает Camera.main напрямую)
+    private void RestoreCameraOffset()
+    {
+        if (!cameraOffsetCaptured) CaptureCameraOffset();
+        var mainCam = Camera.main;
+        if (mainCam == null || mainCam.transform == transform) return;
+        if (mainCam.transform.parent == transform)
+            mainCam.transform.localPosition = cameraLocalOffsetAtStart;
+        else
+            mainCam.transform.position = transform.position + cameraWorldOffsetAtStart;
     }
 
     // Вложен ли узел в предка ancestor (для поиска камеры внутри героя)
@@ -216,15 +273,8 @@ public class RtsCameraController : MonoBehaviour
         // Применяем позицию после ограничения
         transform.position = newPosition;
 
-        // 3. ВРАЩЕНИЕ (Q / E)
-        float rotationDirection = 0f;
-        if (Keyboard.current[Key.Q].isPressed) rotationDirection -= 1f;
-        if (Keyboard.current[Key.E].isPressed) rotationDirection += 1f;
-
-        if (Mathf.Abs(rotationDirection).CompareTo(0.01f) == 1)
-        {
-            transform.Rotate(Vector3.up, rotationDirection * rotationSpeed * currentMultiplier * Time.deltaTime, Space.World);
-        }
+        // 3. ВРАЩЕНИЕ УБРАНО (Обновление 35, решение владельца): с фиксированным углом косяки карты проще скрывать,
+        // а WASD всегда едет в предсказуемые стороны.
 
         // 4. ЗУМ (Колесо мыши)
         if (Mouse.current != null)

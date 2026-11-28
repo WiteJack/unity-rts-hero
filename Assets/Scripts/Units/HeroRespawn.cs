@@ -159,13 +159,17 @@ public class HeroRespawn : MonoBehaviour
         // Сброс анимации смерти: тело встаёт в Idle вместо замершего трупа
         if (anim != null)
         {
+            // Rebind ПЕРЕД сбросом триггеров: если аниматор застрял в состоянии смерти (как у волков, Об.33),
+            // Play("Idle") молча не срабатывает — Rebind принудительно перезапускает контроллер с дефолтного состояния
+            anim.Rebind();
             anim.ResetTrigger("OnDeath");
             anim.ResetTrigger("OnAttack");
             anim.Play("Idle", 0, 0f);
         }
 
-        // Возвращаем контроль игроку
-        if (movement != null) movement.enabled = true;
+
+        if (anim != null && logEvents)
+            Debug.Log("[Возрождение] Аниматор сброшен (Rebind + Idle) — фикс трупной позы после возрождения (Обновление 35).");
 
         if (logEvents)
             Debug.Log($"<color=green>[ВОЗРОЖДЕНИЕ]</color> {gameObject.name} снова в строю на точке спавна — контроль возвращён.");
