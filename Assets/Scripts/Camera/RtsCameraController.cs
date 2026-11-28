@@ -27,16 +27,32 @@ public class RtsCameraController : MonoBehaviour
     [Header("Множитель ускорения (SHIFT)")]
     public float shiftMultiplier = 2f;
 
+    [Header("Смерть и возрождение героя (Обновление 34)")]
+    [Tooltip("СМЕРТЬ ГЕРОЯ: если риг камеры или сама камера вложены в героя (камера внутри префаба героя), трупная анимация смерти трясёт камеру, а телепорт респавна уносит её через карту. При смерти героя камера автоматически отцепляется от героя и становится чистым фриплеем.")]
+    public bool detachCameraOnHeroDeath = true;
+    [Tooltip("ВОЗРОЖДЕНИЕ ГЕРОЯ: героя мгновенно переносит на точку респавна — камера не летит за ним, а мгновенно встаёт НАД точкой возрождения (высота и поворот камеры сохраняются). Выключите, если хотите оставить камеру на месте смерти.")]
+    public bool snapToHeroOnRespawn = true;
+
+    // --- Смерть/возрождение героя (Обновление 34): фикс «камера не фриплей при смерти» и «камера улетает после телепорта». ---
+    // Логика живёт ЗДЕСЬ, в контроллере камеры (решение владельца — НЕ в ClampToMap: кламп только удерживает
+    // камеру в границах карты, но не управляет режимами). Герой отслеживается через HeroRespawn.IsWaitingForRespawn.
+    private HeroRespawn heroRespawn;
+    private Transform heroTransform;
+    private bool heroWasDead = false;
+    private bool heroLookupFailedLogged = false;
+    private float nextHeroLookupTime = 0f;
+
     // АВАРИЙНЫЙ жёсткий зажим КАЖДЫЙ кадр (LateUpdate). Зажим в Update удерживает только
     // собственное движение WASD/краёв экрана. Если камеру за границы отбросил кто-то другой
     // (фокус спавнера в GameSpawner, любой сторонний контроллер героя, сбой кадра) —
     // LateUpdate возвращает её в рамки карты в тот же кадр, до отрисовки.
     void LateUpdate()
     {
+        HandleHeroLifeCycle();
         // риг зажимаем вместе с высотой; Camera.main (если камера ДОЧЕРНИЙ объект рига,
         // как на типичной схеме CameraRig -> Main Camera) — тоже: телепорт двигает именно
         // Camera.main, и без этого камера оставалась за картой до следующего WASD.
-        // Причина бага «после смерти + телепорт камера улетает за карту, хотя ограничения есть».
+        // Смерть/возрождение героя обрабатываются отдельно в HandleHeroLifeCycle (Обновление 34) — здесь только границы карты.
         ClampToMap(transform, true);
         var mainCam = Camera.main;
         if (mainCam != null && mainCam.transform != transform)
@@ -61,6 +77,91 @@ public class RtsCameraController : MonoBehaviour
         {
             t.position = new Vector3(clampedX, clampedY, clampedZ);
         }
+    }
+
+    /// <summary>Слежит за смертью/возрождением героя и переключает режимы камеры (Обновление 34).</summary>
+    private void HandleHeroLifeCycle()
+    {
+        // Герой ещё не найден: ищем не чаще раза в 2 сек — спавн героя может случиться позже старта камеры
+        if (heroRespawn == null)
+        {
+            if (Time.time.CompareTo(nextHeroLookupTime) == -1) return;
+            nextHeroLookupTime = Time.time + 2f;
+            heroRespawn = FindFirstObjectByType<HeroRespawn>();
+            if (heroRespawn == null)
+            {
+                if (!heroLookupFailedLogged)
+                {
+                    Debug.LogWarning("[КАМЕРА] HeroRespawn на сцене не найден — причина: на герое нет компонента HeroRespawn или герой ещё не заспавнился. Камера не узнает о смерти/возрождении героя.");
+                    heroLookupFailedLogged = true;
+                }
+                return;
+            }
+            heroTransform = heroRespawn.transform;
+        }
+
+        bool heroDead = heroRespawn.IsWaitingForRespawn;
+
+        if (heroDead && !heroWasDead) OnHeroDiedCamera();
+        if (!heroDead && heroWasDead) OnHeroRespawnedCamera();
+
+        heroWasDead = heroDead;
+    }
+
+    // СМЕРЬ ГЕРОЯ: камера ОБЯЗАНА стать фриплеем. Если риг или сама камера вложены в героя,
+    // анимация смерти корячит камеру («смерть ломает камеру») — отцепляем в мировых координатах.
+    private void OnHeroDiedCamera()
+    {
+        bool detached = false;
+
+        if (detachCameraOnHeroDeath && transform.parent != null)
+        {
+            transform.SetParent(null, true); // true = оставить мировую позицию и поворот как были
+            detached = true;
+        }
+
+        // Если сама камера была вложена в героя — возвращаем её под этот риг (мировая позиция сохраняется)
+        var mainCam = Camera.main;
+        if (mainCam != null && heroTransform != null && IsDescendantOf(mainCam.transform, heroTransform))
+        {
+            mainCam.transform.SetParent(transform, true);
+            detached = true;
+        }
+
+        if (detached)
+            Debug.Log("[КАМЕРА] Герой погиб → камера отцеплена от героя и переведена во фриплей (Обновление 34).");
+        else
+            Debug.Log("[КАМЕРА] Герой погиб → камера уже была фриплеем, отцеплять нечего (Обновление 34).");
+    }
+
+    // ВОЗРОЖДЕНИЕ: героя мгновенно переносит на точку респавна (HeroRespawn.RespawnNow).
+    // Если бы камера осталась привязанной к герою — её бы унесло через всю карту.
+    // Вместо этого ставим риг НАД точкой возрождения: высота и поворот камеры сохраняются.
+    private void OnHeroRespawnedCamera()
+    {
+        if (snapToHeroOnRespawn && heroTransform != null)
+        {
+            Vector3 above = new Vector3(heroTransform.position.x, transform.position.y, heroTransform.position.z);
+            transform.position = above;
+            // штатная проверка границ после переноса; сам фикс — здесь, в контроллере, не в клампе
+            ClampToMap(transform, true);
+            Debug.Log($"[КАМЕРА] Герой возродился на {heroTransform.position} → камера перенесена над точкой респавна, высота/поворот сохранены (Обновление 34).");
+        }
+        else
+        {
+            Debug.Log("[КАМЕРА] Герой возродился → камера остаётся фриплеем на месте смерти (перенос отключён в инспекторе).");
+        }
+    }
+
+    // Вложен ли узел в предка ancestor (для поиска камеры внутри героя)
+    private static bool IsDescendantOf(Transform node, Transform ancestor)
+    {
+        while (node != null)
+        {
+            if (node.parent == ancestor) return true;
+            node = node.parent;
+        }
+        return false;
     }
 
     void Update()
