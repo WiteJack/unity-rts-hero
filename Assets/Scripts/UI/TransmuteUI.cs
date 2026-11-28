@@ -11,7 +11,7 @@ using UnityEngine.EventSystems;
 /// - СЛИЯНИЕ — если первые ДВЕ ячейки заняты предметами ОДНОГО тира, оба уничтожаются и выдаётся
 ///   предмет тиром выше (пример: два тир 3 = один тир 4). Стоимость за тир РЕЗУЛЬТАТА:
 ///   тир 2 = 100, тир 3 = 300, тир 4 = 1200, тир 5 = 2800 золота.
-/// - ПОКУПКА СЛУЧАЙНОГО — случайный тир 1–4, цена 1000/2500/5000/12000 (26000 — тир 5, когда появится).
+/// - ПОКУПКА СЛУЧАЙНОГО (Обновление 37) — 4 кнопки по тирам: Тир 1 = 1000, Тир 2 = 2500, Тир 3 = 5000, Тир 4 = 12000 золота (26000 — тир 5, когда появится). У всех кнопок всплывают описания.
 /// Подсветка (по запросу владельца): первая ячейка — ГОЛУБАЯ (цель трансмутации), вторая ячейка — СИНЯЯ (пара слияния).
 /// Закрытый 4-й слот — под специальных героев (заглушка по диздоку).
 /// Создаётся кодом, на сцене ничего добавлять к UI не нужно. Панель открывает TransmuteBuilding.
@@ -72,7 +72,7 @@ public class TransmuteUI : MonoBehaviour
         Instance = rootGO.AddComponent<TransmuteUI>();
         Instance.canvas = cvs;
         Instance.Build();
-        Debug.Log("[ТРАНСМУТАЦИЯ] TransmuteUI создан (Обновление 26): 6 слотов героя + закрытый слот, кнопки Трансмутация/Слияние/Купить случайное.");
+        Debug.Log("[ТРАНСМУТАЦИЯ] TransmuteUI создан (Обновление 26/37): 6 слотов героя + закрытый слот, кнопки Трансмутация/Слияние + покупка случайного тирами 1..4.");
     }
 
     public static void Hide()
@@ -83,7 +83,7 @@ public class TransmuteUI : MonoBehaviour
     private void Build()
     {
         float width = Pad * 2 + Cols * CellSize + (Cols - 1) * CellGap;
-        float height = Pad + TitleHeight + 4 + Rows * CellSize + (Rows - 1) * CellGap + 6 + ButtonsHeight + 4 + HintHeight + Pad;
+        float height = Pad + TitleHeight + 4 + Rows * CellSize + (Rows - 1) * CellGap + 6 + ButtonsHeight + 6 + ButtonsHeight + 4 + HintHeight + Pad; // + ряд 2 кнопок (Обновление 37)
 
         var panel = gameObject.AddComponent<RectTransform>();
         panel.anchorMin = new Vector2(1f, 0f);
@@ -157,30 +157,34 @@ public class TransmuteUI : MonoBehaviour
             }
         }
 
-        // Кнопки: Трансмутация | Слияние | Купить случайное
+        // Кнопки (Обновление 37): ряд 1 — Трансмутация | Слияние; ряд 2 — покупка случайного по тирам 1..4 (диздок «Снаряжение»)
         float btnY = Pad + TitleHeight + 4 + Rows * CellSize + (Rows - 1) * CellGap;
-        string[] captions = { "Трансмутация", "Слияние", "Купить случайное" };
-        float btnW = (width - Pad * 2 - 2 * 6) / 3f;
-        for (int i = 0; i < 3; i++)
-        {
-            var btnGO = new GameObject("Btn_" + captions[i]);
-            btnGO.transform.SetParent(transform, false);
-            var bRT = btnGO.AddComponent<RectTransform>();
-            bRT.anchorMin = new Vector2(0f, 1f); bRT.anchorMax = new Vector2(0f, 1f);
-            bRT.pivot = new Vector2(0f, 1f);
-            bRT.anchoredPosition = new Vector2(Pad + i * (btnW + 6f), -(btnY + 4));
-            bRT.sizeDelta = new Vector2(btnW, ButtonsHeight);
-            var bImg = btnGO.AddComponent<Image>();
-            bImg.color = new Color(0.18f, 0.18f, 0.24f, 1f);
-            var btn = btnGO.AddComponent<Button>();
-            var captured = i;
-            btn.onClick.AddListener(() => OnButton(captured));
+        float row2Y = btnY + ButtonsHeight + 6f;
+        float btnW2 = (width - Pad * 2 - 6f) / 2f;
+        float btnW4 = (width - Pad * 2 - 3 * 6f) / 4f;
 
-            var label = CreateLabel(btnGO.transform, captions[i], 9, new Color(1f, 0.85f, 0.35f), FontStyle.Bold);
-            var lRT = label.rectTransform;
-            lRT.anchorMin = Vector2.zero; lRT.anchorMax = Vector2.one;
-            lRT.offsetMin = Vector2.zero; lRT.offsetMax = Vector2.zero;
-            label.alignment = TextAnchor.MiddleCenter;
+        // Ряд 1: Трансмутация | Слияние (механика не менялась, только ширина кнопок)
+        string[] captions = { "Трансмутация", "Слияние" };
+        for (int i = 0; i < 2; i++)
+        {
+            var btn = CreatePanelButton(captions[i], new Vector2(Pad + i * (btnW2 + 6f), -(btnY + 4)), new Vector2(btnW2, ButtonsHeight), 10);
+            int captured = i;
+            btn.onClick.AddListener(() => OnButton(captured));
+            var hover = btn.gameObject.AddComponent<TooltipHover>();
+            hover.TitleFn = () => ButtonTooltipTitle(captured);
+            hover.BodyFn = () => ButtonTooltipBody(captured);
+        }
+
+        // Ряд 2: вместо одной кнопки «Купить случайное» — 4 кнопки по тирам (цены 1000/2500/5000/12000, по диздоку)
+        for (int i = 0; i < 4; i++)
+        {
+            int tier = i + 1;
+            var btn = CreatePanelButton("Тир " + tier + ": " + BuyRandomCosts[i], new Vector2(Pad + i * (btnW4 + 6f), -(row2Y + 4)), new Vector2(btnW4, ButtonsHeight), 9);
+            btn.onClick.AddListener(() => OnButton(1 + tier));
+            var hover = btn.gameObject.AddComponent<TooltipHover>();
+            int capturedTier = tier;
+            hover.TitleFn = () => ButtonTooltipTitle(1 + capturedTier);
+            hover.BodyFn = () => ButtonTooltipBody(1 + capturedTier);
         }
 
         // Подсказка подсветки
@@ -203,7 +207,7 @@ public class TransmuteUI : MonoBehaviour
         if (eq == null || eq.Slots == null) { Debug.LogWarning("[ТРАНСМУТАЦИЯ] На герое нет EquipmentSystem — обработка невозможна."); return; }
         if (btnIdx == 0) DoTransmute();
         else if (btnIdx == 1) DoMerge();
-        else DoBuyRandom();
+        else DoBuyRandom(btnIdx - 1); // кнопки 2..5 — покупка случайного тиров 1..4 (Обновление 37)
     }
 
     private bool PayGold(int cost)
@@ -272,12 +276,11 @@ public class TransmuteUI : MonoBehaviour
         RenderAll();
     }
 
-    /// <summary>ПОКУПКА СЛУЧАЙНОГО: случайный тир 1–4, цена по диздоку; свободный слот — надеть, все заняты — сундучок у героя.</summary>
-    public void DoBuyRandom()
+    /// <summary>ПОКУПКА СЛУЧАЙНОГО ВЫБРАННОГО ТИРА (1..4, Обновление 37): цена по диздоку; свободный слот — надеть, все заняты — сундучок у героя.</summary>
+    public void DoBuyRandom(int tier) // тир выбирается кнопкой (Обновление 37)
     {
         if (eq == null) eq = FindAnyObjectByType<EquipmentSystem>();
-        int tier = Random.Range(1, 5); // тиры 1..4 (тир 5 в базе пока нет)
-        int cost = BuyRandomCosts[tier - 1];
+        int cost = BuyRandomCosts[Mathf.Clamp(tier - 1, 0, BuyRandomCosts.Length - 1)];
         if (!PayGold(cost)) return;
 
         var def = EquipmentDatabase.GetRandom((EquipmentDatabase.Tier)tier);
@@ -344,6 +347,26 @@ public class TransmuteUI : MonoBehaviour
         }
     }
 
+    // ==================== ТУЛТИПЫ КНОПОК (Обновление 37: описания во всплывающем окошке) ====================
+
+    private string ButtonTooltipTitle(int btnIdx)
+    {
+        if (btnIdx == 0) return "Трансмутация";
+        if (btnIdx == 1) return "Слияние";
+        return "Купить случайное — тир " + (btnIdx - 1);
+    }
+
+    private string ButtonTooltipBody(int btnIdx)
+    {
+        if (btnIdx == 0)
+            return "Заменяет предмет в ГОЛУБОЙ (первой) ячейке на случайный предмет ТОГО ЖЕ тира. Старый предмет уничтожается.\nЦена по тиру предмета: тир 1 = 100, тир 2 = 200, тир 3 = 300, тир 4 = 400, тир 5 = 500 золота.";
+        if (btnIdx == 1)
+            return "Уничтожает предметы в ГОЛУБОЙ и СИНЕЙ ячейках (тиры должны совпадать) и выдаёт предмет ТИРОМ ВЫШЕ в свободную ячейку.\nЦена по тиру результата: тир 2 = 100, тир 3 = 300, тир 4 = 1200, тир 5 = 2800 золота.";
+        int tier = Mathf.Clamp(btnIdx - 1, 1, BuyRandomCosts.Length);
+        int cost = BuyRandomCosts[tier - 1];
+        return "Покупает случайное снаряжение ТИРА " + tier + " за " + cost + " золота (цены по диздоку).\nЕсть свободный слот — предмет сразу наденется на героя.\nВсе 6 слотов заняты — сундучок выпадет у ног героя.";
+    }
+
     // ==================== ТУЛТИПЫ ====================
 
     private string CellTooltipTitle(int idx)
@@ -370,6 +393,27 @@ public class TransmuteUI : MonoBehaviour
     }
 
     // ==================== ХЕЛПЕРЫ ====================
+
+    /// <summary>Однотипная кнопка панели: фон + Button + подпись (Обновление 37 — раньше дублировалось в цикле).</summary>
+    private Button CreatePanelButton(string caption, Vector2 anchoredPos, Vector2 size, int fontSize)
+    {
+        var btnGO = new GameObject("Btn_" + caption);
+        btnGO.transform.SetParent(transform, false);
+        var bRT = btnGO.AddComponent<RectTransform>();
+        bRT.anchorMin = new Vector2(0f, 1f); bRT.anchorMax = new Vector2(0f, 1f);
+        bRT.pivot = new Vector2(0f, 1f);
+        bRT.anchoredPosition = anchoredPos;
+        bRT.sizeDelta = size;
+        var bImg = btnGO.AddComponent<Image>();
+        bImg.color = new Color(0.18f, 0.18f, 0.24f, 1f);
+        var btn = btnGO.AddComponent<Button>();
+        var label = CreateLabel(btnGO.transform, caption, fontSize, new Color(1f, 0.85f, 0.35f), FontStyle.Bold);
+        var lRT = label.rectTransform;
+        lRT.anchorMin = Vector2.zero; lRT.anchorMax = Vector2.one;
+        lRT.offsetMin = Vector2.zero; lRT.offsetMax = Vector2.zero;
+        label.alignment = TextAnchor.MiddleCenter;
+        return btn;
+    }
 
     private static Text CreateLabel(Transform parent, string text, int size, Color color, FontStyle style)
     {
